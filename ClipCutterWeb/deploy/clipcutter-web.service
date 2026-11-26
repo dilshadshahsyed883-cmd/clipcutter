@@ -1,0 +1,21 @@
+[Unit]
+Description=ClipCutter Web
+After=network.target
+
+[Service]
+Type=simple
+User=clipcutterweb
+Group=clipcutterweb
+WorkingDirectory=/srv/clipcutter-web/current
+EnvironmentFile=/etc/clipcutter-web/clipcutter-web.env
+ExecStart=/srv/clipcutter-web/current/.venv/bin/python /srv/clipcutter-web/current/run.py
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clipcutter-web
+
+[Install]
+WantedBy=multi-user.target

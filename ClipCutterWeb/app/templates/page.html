@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light"><title>{{ page.title }} · ClipCutter Web</title>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-three-tab-1"></head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>ClipCutter Web</strong></header>
+<div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
+<div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<a class="brand" href="/dashboard" aria-label="ClipCutter Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>ClipCutter <b>Web</b></span></a>
+<div class="nav-group"><a class="nav-top {% if page.area == 'dashboard' %}current{% endif %}" href="/dashboard">Dashboard</a></div>
+<div class="nav-group"><a class="nav-top {% if page.area == 'studio' %}current{% endif %}" href="/studio/extractor" {% if page.area == 'studio' %}aria-current="page"{% endif %}>ClipCutter Studio</a></div>
+<div class="nav-group"><a class="nav-top {% if page.area == 'admin' %}current{% endif %}" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
+<div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
+</nav><main id="content" class="content" tabindex="-1">
+<h1 class="visually-hidden">ClipCutter Studio</h1>
+<nav class="studio-tabs" aria-label="ClipCutter Studio modules">
+  <a href="/studio/extractor" {% if page.key == 'extractor' %}class="active" aria-current="page"{% endif %}>Clip Extractor</a>
+  <a href="/studio/analyzer" {% if page.key == 'analyzer' %}class="active" aria-current="page"{% endif %}>Person Analyzer</a>
+</nav>
+<section class="content-card"><h2>{{ page.title }}</h2><p>{{ page.description }}</p><p>Processing is not enabled in this foundation release. No jobs are accepted.</p></section>
+</main></div>
+<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
+</body></html>

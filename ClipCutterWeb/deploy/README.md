@@ -1,0 +1,2 @@
+# Foundation deployment preparation
+Manual VPS terminal only. The independent systemd unit and private admin provisioning script are provided as source templates. Full guarded bootstrap, exact-main-SHA staging, SQLite backups, atomic promotion/rollback and separate Nginx/TLS cutover are not yet implemented or tested. Do not install/start the unit or provision credentials until the host audit and guarded helper are ready. Select a verified unused loopback port (never Concat's 18873). Keep all existing services unchanged. No CI deployment.
