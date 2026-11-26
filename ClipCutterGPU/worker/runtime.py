@@ -1,5 +1,7 @@
 """GPU runtime verification, entirely offline model startup."""
+import logging
 import os
+import subprocess
 from pathlib import Path
 from .model_pins import verify_models
 
@@ -12,7 +14,6 @@ def require_models(cancel=None):
 def warmup():
     import numpy as np
     import onnxruntime as ort
-    import subprocess
     root=require_models()
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         raise RuntimeError("CUDA execution provider unavailable")
@@ -26,9 +27,36 @@ def warmup():
             raise RuntimeError("Invalid model warmup: "+name)
     for tool in ("ffmpeg","ffprobe"):
         subprocess.run([tool,"-version"],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15)
-    # CPU encoding is permitted on GPU nodes if NVENC is not present; report it, do not claim GPU encoding.
-    check=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-f","lavfi","-i","color=size=128x128:rate=25","-frames:v","1","-c:v","hevc_nvenc","-f","null","-"],capture_output=True,timeout=25)
-    mode=os.environ.get("CLIPCUTTER_VIDEO_ENCODER","auto")
-    if mode not in {"auto","cpu","nvenc"}: raise RuntimeError("Invalid encoder policy")
-    if mode=="nvenc" and check.returncode!=0: raise RuntimeError("NVENC smoke test failed")
-    return {"provider":"CUDAExecutionProvider","nvenc_test_passed":check.returncode==0,"encoder_policy":mode}
+    return verify_encoders(os.environ.get("CLIPCUTTER_VIDEO_ENCODER","auto"))
+
+
+def probe_nvenc(encoder):
+    """Exercise real encoding with a supported HD frame size, not just encoder listing."""
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+               "-f", "lavfi", "-i", "color=size=1280x720:rate=25",
+               "-frames:v", "25", "-c:v", encoder, "-f", "null", "-"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=25)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logging.getLogger(__name__).warning("NVENC %s probe failed: %s", encoder, exc)
+        return False
+    if result.returncode != 0:
+        logging.getLogger(__name__).warning(
+            "NVENC %s probe failed (exit %s): %s", encoder,
+            result.returncode, result.stderr.strip() or "(no stderr)")
+        return False
+    return True
+
+
+def verify_encoders(mode):
+    if mode not in {"auto", "cpu", "nvenc"}:
+        raise RuntimeError("Invalid encoder policy")
+    hevc = probe_nvenc("hevc_nvenc")
+    h264 = probe_nvenc("h264_nvenc")
+    # The actual extractor uses HEVC. Preserve the existing aggregate health
+    # field and strict policy semantics; H264 is an independent diagnostic.
+    if mode == "nvenc" and not hevc:
+        raise RuntimeError("NVENC smoke test failed (hevc_nvenc)")
+    return {"provider": "CUDAExecutionProvider", "nvenc_test_passed": hevc,
+            "hevc_nvenc_test_passed": hevc, "h264_nvenc_test_passed": h264,
+            "encoder_policy": mode}
