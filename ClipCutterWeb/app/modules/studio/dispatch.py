@@ -234,6 +234,14 @@ class Dispatcher:
             if state in ("queued","running","cancelling"):
                 if local=="ready":self.store.transition(jid,"ready","processing","GPU accepted verified inputs",0)
                 self._phase(jid,"processing")
+                progress=remote.get("progress")
+                if isinstance(progress,dict):
+                    done,total=progress.get("done"),progress.get("total")
+                    if type(done) is int and type(total) is int and 0<=done<=total and total>0:
+                        label=str(progress.get("stage") or "processing")[:80]
+                        message=str(progress.get("message") or "")[:350]
+                        self.store.gpu_stage_progress(jid,"processing",100*done//total,
+                            "GPU "+label+(": "+message if message else ""))
                 return state
             if state in ("failed","cancelled"):
                 if local in ("ready","processing","delivering"):
@@ -287,10 +295,13 @@ class Dispatcher:
         self._phase(jid,"delivering",digest)
         dest=safe_dir(safe_dir(self.store.root/"outputs")/jid)
         scratch=safe_dir(safe_dir(self.store.root/"delivery-parts")/jid)
+        total=sum(item["size"] for item in items)
+        received=0
         for item in items:
             n=item["name"];p=dest/n;part=scratch/n
             if p.exists():
                 if p.resolve()!=p or not p.is_file() or p.stat().st_size!=item["size"] or sha_file(p)!=item["sha256"]:raise DispatchError("Existing result mismatch")
+                received+=item["size"]
                 continue
             offset=part.stat().st_size if part.exists() else 0
             if offset>item["size"] or part.is_symlink():raise DispatchError("Unsafe delivery partial")
@@ -300,13 +311,15 @@ class Dispatcher:
                 chunk=self.client.fetch(row["attempt_id"],n,offset,length)
                 if len(chunk)!=length:raise DispatchError("Incomplete output chunk")
                 with part.open("ab") as f:f.write(chunk);f.flush();os.fsync(f.fileno())
+                self.store.gpu_stage_progress(jid,"delivering",100*(received+offset+length)//total,
+                    f"GPU downloading: {received+offset+length:,} / {total:,} bytes received")
                 return "delivering"
             if sha_file(part)!=item["sha256"]:raise DispatchError("Complete output digest mismatch; retain partial")
             if item["media_type"]=="video/mp4":verify_format(part,"video",".mp4")
             elif item["media_type"]=="application/json":
                 if item["size"]>MAX_JSON:raise DispatchError("JSON output too large")
                 json.loads(part.read_bytes())
-            part.rename(p)
+            part.rename(p);received+=item["size"]
         from .output_names import allocate
         allocate(self.store,jid,items,m["job"]["request"]["settings"].get("stitched",False))
         folder=m["job"]["request"]["input"].get("output_folder")
