@@ -47,13 +47,14 @@
  const refMode=form.elements.reference_mode, fileInput=$("reference-files");
  function syncReferences(){
    const drive=refMode.value==="drive";
-   $("reference-drive").hidden=!drive;$("reference-upload").hidden=drive;
+   $("reference-drive").hidden=!drive;$("reference-upload").hidden=drive;$("reference-details").hidden=drive;
    form.elements.reference_link.disabled=!drive;
    form.elements.reference_link.required=drive&&kind==="extractor"&&(form.elements.mode.value!=="manual"||form.elements.framing.value!=="whole");
  }
- if(refMode){refMode.onchange=syncReferences;syncReferences();}
+ if(refMode){refMode.onchange=syncReferences;syncReferences();$("reference-browse").onclick=()=>{if(!saving)fileInput.click();};}
  function drawReferences(){
    if(!fileInput)return;
+   $("reference-count").textContent=refsSelected.length?refsSelected.length+" image"+(refsSelected.length===1?"":"s")+" selected":"Choose images";
    previewUrls.forEach(URL.revokeObjectURL);previewUrls=[];$("reference-preview").replaceChildren();
    refsSelected.forEach((file,i)=>{
      const row=put("div","");const img=document.createElement("img");img.width=44;img.height=44;img.style.objectFit="cover";
