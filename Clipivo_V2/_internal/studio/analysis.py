@@ -26,7 +26,10 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
                     if len(e)==len(center): compatible.append(unit(e))
                 except (ValueError,TypeError): continue
             if compatible:
-                try: scores.append((float(np.dot(center,unit(np.mean(compatible,axis=0)))),p))
+                try:
+                    profile_center=unit(np.mean(compatible,axis=0))
+                    if all(float(np.dot(e,profile_center))>=threshold for e in compatible):
+                        scores.append((float(np.dot(center,profile_center)),p))
                 except ValueError: continue
         scores.sort(key=lambda x:-x[0])
         if not scores: continue
@@ -56,6 +59,7 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
 def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
     data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}),engine=engine,persist=False)
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
+    refresh(data)
     match_profiles(data,profiles);data['studio_version']='2.3'
     if cfg.get('model_signature'):data['model_signature']=cfg['model_signature']
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
