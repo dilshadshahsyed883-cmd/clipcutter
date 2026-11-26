@@ -87,7 +87,8 @@ class Drive:
             if not isinstance(fid, str) or not ID.fullmatch(fid) or fid in seen:
                 raise ValueError()
             size = e.get("Size")
-            md5 = (e.get("Hashes") or {}).get("MD5", "").lower()
+            hashes = e.get("Hashes") or {}
+            md5 = (hashes.get("MD5") or hashes.get("md5") or "").lower()
             if type(size) is not int or not 0 < size <= LIMIT or not re.fullmatch(r"[a-f0-9]{32}", md5):
                 raise ValueError()
             file_key = e.get("ResourceKey") or ""
