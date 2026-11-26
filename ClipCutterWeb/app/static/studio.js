@@ -63,7 +63,7 @@
  }
  if(fileInput)fileInput.onchange=()=>{
    const files=[...refsSelected,...fileInput.files];fileInput.value="";
-   if(files.length>12||files.some(f=>!f.size||!/\.(jpe?g|png|webp)$/i.test(f.name))||files.reduce((n,f)=>n+f.size,0)>3*1024**2){status.textContent="Choose up to 12 JPG, PNG or WEBP images, 3 MiB total.";return;}
+   if(files.length>12||files.some(f=>!f.size||f.size>10*1024**2||!/\.(jpe?g|png|webp)$/i.test(f.name))||files.reduce((n,f)=>n+f.size,0)>120*1024**2){status.textContent="Choose up to 12 JPG, PNG or WEBP images, 10 MiB each, 120 MiB total.";return;}
    refsSelected=files;drawReferences();status.textContent="";
  };
  async function uploadRequest(p,files){

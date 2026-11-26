@@ -11,3 +11,7 @@ Do not execute on production until the exact source passes source-level tests an
 - The deployment source is unexecuted on VPS; do not infer live deployment from repository commits.
 
 For source-only validation from a clean non-production checkout, run `bash ClipCutterWeb/deploy/test-source.sh` as an unprivileged user. It checks shell syntax, compiles Python and runs the regression suite in a disposable venv. No service writes or deployment. An installed helper that differs from the pinned helper is rejected; review upgrades separately.
+
+## Reference upload capacity
+
+Direct PC reference uploads: up to 12 JPG/PNG/WEBP images, 10 MiB per image, 120 MiB combined. The existing 16 MiB worker per-reference cap is unchanged. Hash and copy in bounded chunks. Only the exact reference upload endpoint uses a 128 MiB ingress limit and Concat-style timeouts/no proxy buffering; other endpoints retain 4 MiB. After staging the reviewed SHA on an already activated site, run `sudo bash /srv/clipcutter-web/current/deploy/nginx-upload-upgrade.sh <SHA>`. The helper validates the existing managed site hash, backs up its configuration, tests Nginx, reloads it, verifies ClipCutter and the existing sites, and restores the original configuration on failure. If the site is unmanaged or drifted, stop for manual review. No Concat config change or GPU image build.
