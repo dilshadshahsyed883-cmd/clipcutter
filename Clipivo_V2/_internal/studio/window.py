@@ -14,7 +14,7 @@ class SettingsPage(QWidget):
         super().__init__();self.window=window;cfg=load_settings();l=QVBoxLayout(self);l.addWidget(QLabel('Analysis settings'));form=QFormLayout();l.addLayout(form)
         self.models=QLineEdit(cfg.get('models',''));row=QHBoxLayout();row.addWidget(self.models);button('Browse',self.browse,row);button('Auto detect',self.detect,row);form.addRow('Model folder',row)
         limits=cfg.get('clip_limits',{})
-        self.limits_on=QCheckBox('Apply min/max to every extractor and batch export (accurate cutting; Whole picture)');self.limits_on.setChecked(limits.get('enabled',False));form.addRow(self.limits_on)
+        self.limits_on=QCheckBox('Apply min/max to extraction, batch and reference matching (extraction: accurate cutting; Whole picture)');self.limits_on.setChecked(limits.get('enabled',False));form.addRow(self.limits_on)
         self.clip_min=QDoubleSpinBox();self.clip_min.setDecimals(3);self.clip_min.setRange(.1,600);self.clip_min.setValue(limits.get('minimum',2.5));form.addRow('Minimum clip seconds',self.clip_min)
         self.clip_max=QDoubleSpinBox();self.clip_max.setDecimals(3);self.clip_max.setRange(.1,600);self.clip_max.setValue(limits.get('maximum',4.));form.addRow('Maximum clip seconds',self.clip_max)
         self.custom=QCheckBox('I supply compatible SCRFD + ArcFace weights with my own license');self.custom.setChecked(cfg.get('custom_models',False));form.addRow(self.custom)
@@ -149,11 +149,11 @@ class StudioWindow(MainWindow):
         return True
     def _video_job_running(self):
         upstream=super()._video_job_running()
-        return upstream or (getattr(self,'studio_ready',False) and (self.analyzer_page.busy or self.replacement_page.task.busy))
+        return upstream or (getattr(self,'studio_ready',False) and (self.analyzer_page.busy or self.replacement_page.busy))
     def closeEvent(self,event):
         if getattr(self,'studio_ready',False):
             tasks=[self.analyzer_page.task,self.replacement_page.task]
-            if self.analyzer_page.busy or any(t.busy for t in tasks):
+            if self.analyzer_page.busy or self.replacement_page.busy or any(t.busy for t in tasks):
                 self.analyzer_page.cancel_analysis()
                 for t in tasks:t.cancel()
                 event.ignore();self.statusBar().showMessage('Cancelling active work; close again when it finishes.');return
