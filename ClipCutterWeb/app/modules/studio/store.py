@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from .contracts import JobRequest
 
 KINDS={"extractor","analyzer"}
-TRANSITIONS={"awaiting_input":{"staging","failed"},"failed":{"staging"},"staging":{"ready","failed","cancelled"},"ready":{"processing","cancelled","failed"},"processing":{"delivering","failed","cancelled"},"delivering":{"failed"}}
+TRANSITIONS={"awaiting_input":{"staging","failed"},"failed":{"staging"},"staging":{"ready","failed","cancelled"},"ready":{"processing","cancelled","failed"},"processing":{"delivering","review","failed","cancelled"},"delivering":{"failed"}}
 
 def safe_dir(path):
     path.mkdir(mode=0o700,parents=True,exist_ok=True)
