@@ -3,10 +3,10 @@ import subprocess, tempfile, json, os, math
 from pathlib import Path
 from core.downloads import tool_path
 
-def execute(args,cancel=lambda:False):
+def execute(args,cancel=lambda:False,stdout=None):
     if cancel():raise InterruptedError('Rendering cancelled')
     with tempfile.TemporaryFile(mode='w+',encoding='utf-8') as log:
-        p=subprocess.Popen(args,stdout=subprocess.DEVNULL,stderr=log,creationflags=0x08000000 if os.name=='nt' else 0)
+        p=subprocess.Popen(args,stdout=subprocess.DEVNULL if stdout is None else stdout,stderr=log,creationflags=0x08000000 if os.name=='nt' else 0)
         try:
             while True:
                 if cancel():
@@ -21,9 +21,11 @@ def execute(args,cancel=lambda:False):
         finally:
             if p.poll() is None:p.kill();p.wait()
 
-def verify(path,duration,fps,frames=None,audio_required=False):
-    p=subprocess.run([tool_path('ffprobe'),'-v','error','-count_frames','-show_streams','-show_format','-of','json',str(path)],capture_output=True,text=True,timeout=30,check=True)
-    data=json.loads(p.stdout);videos=[s for s in data['streams'] if s['codec_type']=='video']
+def verify(path,duration,fps,frames=None,audio_required=False,cancel=lambda:False):
+    with tempfile.TemporaryFile(mode='w+',encoding='utf-8') as out:
+        execute([tool_path('ffprobe'),'-v','error','-count_frames','-show_streams','-show_format','-of','json',str(path)],cancel,stdout=out)
+        out.seek(0);data=json.load(out)
+    videos=[s for s in data['streams'] if s['codec_type']=='video']
     actual=float(videos[0].get('duration',data['format']['duration'])) if videos else 0
     if not videos or abs(actual-duration)>max(.002,.51/fps):raise RuntimeError(f'Output validation failed: expected {duration:.3f}s, got {actual:.3f}s')
     if frames is not None and int(videos[0].get('nb_read_frames',0)) != frames:raise RuntimeError('Output frame count mismatch')
@@ -64,14 +66,14 @@ def reconstruct(plan,output,width=None,height=None,fps=None,audio='original',aud
             part=temp/f'{i:05}.mp4';parts.append(part)
             vf=f'setpts=(PTS-STARTPTS)/{speed},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={1/fps}'
             execute([tool_path('ffmpeg'),'-nostdin','-v','error','-y','-ss',str(start),'-t',str(min(limit-start,needed*speed)),'-i',sel['path'],'-map','0:v:0','-an','-vf',vf,'-frames:v',str(frames),'-c:v',encoder,'-pix_fmt','yuv420p',str(part)],cancel)
-            verify(part,needed,fps,frames);progress(i+1,len(rows)+1)
+            verify(part,needed,fps,frames,cancel=cancel);progress(i+1,len(rows)+1)
         listing=temp/'parts.txt';listing.write_text(''.join(f"file '{p.name}'\n" for p in parts),encoding='utf-8')
         candidate=temp/'final.mp4';duration=total_frames/fps
         args=[tool_path('ffmpeg'),'-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(listing)]
         if audio!='none':
             args+=['-i',str(audio_file if audio=='external' else ref['path']),'-map','0:v:0','-map','1:a:0','-c:a','aac','-af',f'aresample=async=1:first_pts=0,apad,atrim=duration={duration}','-t',str(duration)]
         else:args+=['-map','0:v:0','-an']
-        args+=['-c:v','copy','-movflags','+faststart',str(candidate)];execute(args,cancel);verify(candidate,duration,fps,total_frames,audio!='none')
+        args+=['-c:v','copy','-movflags','+faststart',str(candidate)];execute(args,cancel);verify(candidate,duration,fps,total_frames,audio!='none',cancel)
         # Decode the finished video as a final corruption check.
         execute([tool_path('ffmpeg'),'-nostdin','-v','error','-i',str(candidate),'-map','0:v:0','-map','0:a?','-f','null','-'],cancel)
         if cancel():raise InterruptedError('Rendering cancelled')
