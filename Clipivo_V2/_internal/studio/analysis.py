@@ -62,6 +62,7 @@ def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
     refresh(data)
     match_profiles(data,profiles);data['studio_version']='2.3'
     if cfg.get('model_signature'):data['model_signature']=cfg['model_signature']
+    if cfg.get('profile_warnings'):data['profile_warnings']=cfg['profile_warnings']
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
     save_project(folder,data);return data
 
