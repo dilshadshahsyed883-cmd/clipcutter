@@ -3,6 +3,7 @@
 Enable only after finalization, operator approval and real runtime acceptance.
 One root-configured owner, one approved group, one worker. No implicit deployment.
 """
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import os
 import time
@@ -17,11 +18,11 @@ def authorized(store,cfg=None):
         os.environ.get("CLIPCUTTER_LIFECYCLE_ENABLED")=="1" and
         os.environ.get("CLIPCUTTER_APPROVED_OWNER","").casefold()==store.owner and
         bool(store.owner) and (cfg is None or (group_path(cfg)==os.environ.get("CLIPCUTTER_APPROVED_SALAD_GROUP") and
-        cfg.salad_container_group=="clipcutter-gpu" and cfg.parallel==1 and
+        cfg.salad_container_group=="clipcutter-gpu" and cfg.parallel in (1,2) and
         cfg.worker_gateway==os.environ.get("CLIPCUTTER_APPROVED_WORKER_GATEWAY"))))
 
 POLICY_FIELDS={"auto_start","image_pull_threshold","image_pull_seconds",
-               "salad_max_reallocations","salad_reallocate_cooldown"}
+               "salad_max_reallocations","salad_reallocate_cooldown","parallel"}
 
 def policy_only_change(old,new):
     return old.model_dump(exclude=POLICY_FIELDS)==new.model_dump(exclude=POLICY_FIELDS)
@@ -81,64 +82,118 @@ class Scheduler:
         self.store=store;self.cfg=cfg;self.api=api;self.worker=worker
         self.dispatch=Dispatcher(store,worker);self.lifecycle=Lifecycle(store,cfg,api,worker)
         self.control=Control(store)
+        self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix="gpu-lane")
+        self.flights={};self.cursor=0;self.closing=False
+        self.last_error=None;self.last_error_until=0
     def close(self):
+        self.closing=True
+        self.pool.shutdown(wait=True)
         self.dispatch.close()  # VPS intake is owned by the independent web-process queue.
     def _jobs(self):
         with self.store.connect() as c:
-            return [dict(x) for x in c.execute("""SELECT r.id,r.state,r.payload,a.phase FROM requests r
-             LEFT JOIN gpu_attempts a ON a.job_id=r.id WHERE r.owner=? ORDER BY r.created_at,r.id""",(self.store.owner,))]
+            return [dict(x) for x in c.execute("""SELECT r.id,r.state,r.payload,a.phase,g.action AS command FROM requests r
+             LEFT JOIN gpu_attempts a ON a.job_id=r.id LEFT JOIN gpu_commands g ON g.job_id=r.id WHERE r.owner=? ORDER BY r.created_at,r.id""",(self.store.owner,))]
     @staticmethod
     def eligible(row):
         import json
         return blocker(json.loads(row["payload"])) is None
+    def _may_start(self,limit):
+        ctl=self.control.snapshot()
+        rec=self.lifecycle.snapshot()
+        return (not self.closing and not ctl["paused"] and ctl["action"]!="stop"
+                and self.cfg.parallel==limit and rec.get("status") in ("ready","worker_busy")
+                and type(rec.get("concurrency")) is int and rec["concurrency"]>=limit)
+
+    def _launch(self,lane,jid,*,limit,admit=False,observe=False):
+        if lane in self.flights or jid in {job for job,_ in self.flights.values()}:return False
+        options=dict(allow_start=admit,allow_during_intake=admit,render_limit=limit,observe_only=observe)
+        if admit:options["may_start"]=lambda:self._may_start(limit)
+        future=self.pool.submit(self.dispatch.tick,jid,**options)
+        self.flights[lane]=(jid,future)
+        return True
+
+    def _reap(self):
+        for lane,(jid,future) in list(self.flights.items()):
+            if not future.done():continue
+            del self.flights[lane]
+            try:future.result()
+            except DispatchError as exc:
+                self.last_error="worker_reconcile_required: "+str(exc)[:250]
+                self.last_error_until=time.monotonic()+10
+            except Exception:
+                self.last_error="scheduler_error_reconcile"
+                self.last_error_until=time.monotonic()+10
+
     def tick(self):
+        self._reap()
         with self.store.admission():
-            rows=self._jobs()
-            # Unsupported destinations/worker versions stay ready, not falsely failed.
-            # Their verified VPS inputs can be reused after explicit capability approval.
-            import json
-            for row in rows:
-                if row["state"]=="ready" and not row["phase"]:
-                    reason=blocker(json.loads(row["payload"]))
-                    if reason:
-                        message="Verified inputs held: "+reason
-                        with self.store.connect() as c:
-                            c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",(message,int(time.time()),row["id"],self.store.owner,message))
             controls=self.control.snapshot();paused=controls["paused"];action=controls["action"]
             state=self.lifecycle.tick(paused=paused,manual=action)
             clear=action if (action=="start" and state in ("ready","ready_dispatch_blocked","worker_busy") or
                              action=="stop" and state=="stopped") else None
-            self.control.mark(state,clear)
+            record=self.lifecycle.snapshot()
+            capacity=record.get("concurrency",1)
+            pipeline=record.get("pipeline_version")==1
+            limit=self.cfg.parallel
+            supported=type(capacity) is int and capacity>=limit and (limit==1 or pipeline)
+            admit=not paused and action!="stop" and state in ("ready","worker_busy") and supported
             rows=self._jobs()
-            # Existing attempts take priority, including published-but-unacknowledged.
-            # Paused mode blocks new start but never stops running/delivery reconciliation.
-            current=next((x for x in rows if x["phase"] in ("create_intent","staging","start_intent","processing","delivering","published","scan_receipt","review")),None)
-            if current:
-                try:
-                    result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"),allow_during_intake=state in ("ready","worker_busy"))
-                    self.control.mark(result)
-                    return result
-                except DispatchError as exc:
-                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
-                return
-            if paused or action=="stop" or state!="ready":
-                # Expose the live readiness reason on each otherwise eligible request.
-                reason="queue_paused" if paused else "manual_stop_pending" if action=="stop" else state
-                for row in rows:
-                    if row["state"]=="ready" and row["phase"] in (None,"new") and self.eligible(row):
-                        message="Waiting for GPU: "+reason
-                        with self.store.connect() as c:
-                            c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",
-                                      (message,int(time.time()),row["id"],self.store.owner,message))
-                return
-            next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
-            if next_job:
-                try:
-                    result=self.dispatch.tick(next_job["id"],allow_during_intake=True)
-                    self.control.mark(result)
-                    return result
-                except DispatchError as exc:
-                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
+            active_phases={"create_intent","staging","start_intent","processing","output_ready","delivering","published","scan_receipt","review"}
+            output_phases={"output_ready","delivering","published","scan_receipt","review"}
+            upload_phases={"create_intent","staging"}
+            observe_phases={"start_intent","processing"}
+            active=[x for x in rows if x["phase"] in active_phases]
+            counts=record.get("worker_counts",{})
+            # Unknown remote work must not be treated as free capacity.
+            known={"active_renders":sum(x["phase"] in {"start_intent","processing","staging"} for x in active),
+                   "staging":sum(x["phase"] in upload_phases|{"start_intent"} for x in active),
+                   "undelivered":sum(x["phase"] in observe_phases|output_phases for x in active)}
+            matched=all(type(counts.get(k)) is int and 0<=counts[k]<=known[k] for k in known)
+            occupied={jid for jid,_ in self.flights.values()}
+            available=lambda x:x["id"] not in occupied
+            def launch(lane,row,**kw):
+                if row and self._launch(lane,row["id"],limit=limit,**kw):
+                    occupied.add(row["id"])
+            # One download lane, one polling/control lane, one upload/start lane.
+            # A legacy worker remains serial; existing jobs still reconcile while paused.
+            if pipeline or not self.flights:
+                delivery=next((x for x in active if x["phase"] in output_phases and available(x)),None)
+                launch("delivery",delivery)
+            if pipeline or not self.flights:
+                observe=[x for x in rows if available(x) and (x["command"] or x["phase"] in observe_phases)]
+                if observe:
+                    commands=[x for x in observe if x["command"]]
+                    candidates=commands or observe
+                    item=candidates[self.cursor%len(candidates)]
+                    self.cursor+=1
+                    launch("observe",item,observe=True)
+            if pipeline or not self.flights:
+                uploading=next((x for x in active if x["phase"] in upload_phases and not x["command"]),None)
+                if uploading:
+                    if available(uploading):launch("upload",uploading,admit=admit)
+                elif admit and matched and (pipeline or not active):
+                    # Max one preloaded job beyond render slots; bound output backlog.
+                    outstanding=sum(x["phase"] in observe_phases|upload_phases for x in active)
+                    backlog=sum(x["phase"] in output_phases for x in active)
+                    if outstanding<limit+int(pipeline) and backlog<2:
+                        candidate=next((x for x in rows if available(x) and not x["command"] and x["state"]=="ready"
+                                        and x["phase"] in (None,"new") and self.eligible(x)),None)
+                        launch("upload",candidate,admit=True)
+            status=("worker_capacity_mismatch" if state in ("ready","worker_busy") and not supported else
+                    "worker_unknown_remote_work" if admit and not matched else state)
+            if self.last_error and time.monotonic()<self.last_error_until:status=self.last_error
+            elif self.flights:status="pipeline_active" if pipeline else "dispatch_active"
+            self.control.mark(status,clear)
+            for row in rows:
+                if row["state"]!="ready" or row["phase"] not in (None,"new") or row["id"] in occupied:continue
+                import json
+                reason=blocker(json.loads(row["payload"]))
+                message=("Verified inputs held: "+reason if reason else
+                         "Waiting for GPU: "+("queue_paused" if paused else status))
+                with self.store.connect() as c:
+                    c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",
+                              (message,int(time.time()),row["id"],self.store.owner,message))
+            return "pipeline_active" if self.flights else None
 
 def main():
     owner=os.environ.get("CLIPCUTTER_APPROVED_OWNER","")
@@ -170,7 +225,7 @@ def main():
                 except Exception:
                     scheduler.control.mark("scheduler_error_reconcile")
                 # Release admission lock and recheck pause/config between acknowledged chunks.
-                time.sleep(0.05 if result in ("staging","delivering") else 3)
+                time.sleep(0.2 if result=="pipeline_active" else 3)
         finally:
             with store.connect() as c:
                 c.execute("UPDATE scheduler_control SET heartbeat=0 WHERE id=1")
