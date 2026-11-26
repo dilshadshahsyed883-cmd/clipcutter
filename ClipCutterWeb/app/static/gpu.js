@@ -79,7 +79,6 @@
     finally{refreshing=false;fields.disabled=false;$("gpu-refresh").disabled=false;}
   });
   api("/config").then(apply).catch(error=>{$("gpu-capability").textContent=error.message;});
-  fetch("/api/v1/studio/capabilities",{credentials:"same-origin",cache:"no-store"}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$("intake-capability").textContent="Drive: "+(d.input_intake?"Available":"Unavailable")+" · YouTube: "+(d.youtube_intake?"Configured":"Unavailable");}).catch(()=>{$("intake-capability").textContent="Intake status unavailable";});
   const timer=setInterval(async()=>{if(!document.hidden&&!saving){try{controls(await api("/config"));}catch(e){for(const a of ["start","stop","retry","pause","resume"])$("gpu-"+a).disabled=true;}}},10000);
   window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
 })();

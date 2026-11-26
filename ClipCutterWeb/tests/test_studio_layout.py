@@ -18,5 +18,8 @@ class StudioLayoutTests(unittest.TestCase):
         html=(ROOT/"app/templates/gpu.html").read_text()
         self.assertNotIn("Use a separate dedicated ClipCutter group",html)
         self.assertIn('id="gpu-capability"',html)
+        self.assertNotIn("<h2>GPU Config</h2>",html)
+        self.assertNotIn('id="intake-capability"',html)
+        self.assertGreater(html.index('id="gpu-capability"'),html.index("Worker status"))
         for action in ("start","stop","pause","resume","retry"):
             self.assertIn('id="gpu-'+action+'" disabled',html)

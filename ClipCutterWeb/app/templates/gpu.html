@@ -1,7 +1,6 @@
 <link rel="stylesheet" href="/static/studio.css?v=20261126-subtabs-1">
 <div id="studio" data-kind="gpu">
   <section class="content-card studio-card">
-    <div class="studio-heading"><h2>GPU Config</h2><span class="studio-status-chip" id="gpu-capability" role="status">Loading…</span></div><div class="studio-status-chip" id="intake-capability" role="status">Checking intake…</div>
     <form id="gpu-form">
       <fieldset id="gpu-fields" disabled style="border:0;padding:0;margin:0;min-width:0">
         <h3>Salad Connection Setup</h3>
@@ -32,10 +31,11 @@
   </section>
   <section class="content-card studio-card">
     <div class="studio-heading"><h2>Worker status</h2><button type="button" id="gpu-refresh" class="studio-secondary" disabled>Refresh Salad status</button></div>
+    <span class="studio-status-chip" id="gpu-capability" role="status">Loading…</span>
     <p id="gpu-status" role="status" class="studio-note">Status not checked.</p>
     <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Instance</th><th>State</th><th>Image pull</th><th>Salad ready</th><th>Updated</th></tr></thead><tbody id="gpu-instances"></tbody></table></div>
     <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button></div>
 
   </section>
 </div>
-<script defer src="/static/gpu.js?v=20261126-subtabs-1"></script>
+<script defer src="/static/gpu.js?v=20261126-no-header-1"></script>
