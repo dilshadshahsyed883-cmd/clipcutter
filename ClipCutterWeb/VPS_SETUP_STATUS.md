@@ -80,7 +80,7 @@ DNS resolves correctly on the VPS. Existing certificates for app.scenebuilder.on
 - Issuance command: `sudo certbot certonly --webroot -w /var/www/clipcutter-acme --cert-name clip.scenebuilder.online -d clip.scenebuilder.online`.
 - Verified certificate name and domain: clip.scenebuilder.online; ECDSA; expiry 2027-02-24 11:38:54 UTC.
 - Certificate: `/etc/letsencrypt/live/clip.scenebuilder.online/fullchain.pem`; private key: `/etc/letsencrypt/live/clip.scenebuilder.online/privkey.pem`. Never copy key contents into Git.
-- Certbot reported scheduled automatic renewal. Renewal dry-run and future Nginx reload behavior have not been verified.
+- Certbot reported scheduled automatic renewal. The targeted renewal dry-run subsequently succeeded and certbot.timer is active. Actual renewal and Nginx certificate reload behavior remain unverified.
 - Owner authorized temporary HTTPS activation on 2026-11-26 before backend deployment. The dedicated Nginx site was backed up under `/var/backups/clipcutter-web/nginx.*` and updated with a port 443 SSL server for `clip.scenebuilder.online`, using the existing certificate and TLS 1.2/1.3. Its root location initially returned a static HTTP 200 HTML page titled ClipCutter Web — Coming Soon. The placeholder was subsequently replaced by the live reverse proxy.
 - Owner supplied successful `nginx -t`, reload and `HTTPS ACTIVATED` output, followed by another successful `nginx -t` and `active` output. Subsequent VPS `curl -I https://clip.scenebuilder.online` succeeded with HTTP/1.1 200 OK, nginx/1.24.0, text/html, Content-Length 263 at 2026-11-26 12:41:33 UTC. HTTPS response and certificate trust verified from the VPS. HTTP 301 redirect to the exact HTTPS hostname was also verified at 12:40:40 UTC.
 - The backend and reverse proxy were subsequently activated as recorded below.
@@ -106,9 +106,15 @@ The repository's new-site cutover script rejects an already existing hostname. A
 - Nginx syntax and reload succeeded; retry-based local TLS check using --resolve and --noproxy passed exact backend health JSON, anonymous 401 for /dashboard, /admin and /api/v1/session, and 200 for /auth/login. Concat service active. Terminal reported HTTPS REVERSE PROXY PASS.
 - Owner browser screenshot at approximately 12:54 UTC shows authenticated https://clip.scenebuilder.online/dashboard, sidebar Dashboard / ClipCutter Studio / Admin, signed-in identity, sign out control, auto refresh 10 sec, VPS Online, service health 10/10, CPU 0% at sample (4 cores), RAM 53% (4.0/7.6 GB), storage 42.5%, free storage 41.2 GB, load average 0.48 and uptime 40d 20h 56m. These are displayed snapshot values, not independently audited telemetry. Successful browser login and dashboard rendering confirmed; live logout/revocation and other pages not individually verified.
 
+## Final host verification — 2026-11-26
+
+- Owner authorized and executed `sudo systemctl enable clipcutter-web.service`; systemd created the multi-user.target.wants symlink. Subsequent `systemctl is-enabled` returned `enabled` and `systemctl is-active` returned `active`.
+- `sudo certbot renew --cert-name clip.scenebuilder.online --dry-run` succeeded; simulated renewal of the exact certificate passed. `certbot.timer` and `concat-web.service` both reported active.
+- No VPS reboot or real certificate replacement performed. Foundation deployment and basic host preparation are complete; actual reboot and renewal reload behavior remain untested.
+
 ## Remaining work
 
-1. Confirm systemd UnitFileState; service is running but boot enablement has not been verified. Enable only with owner approval. Verify certificate renewal dry-run and Nginx reload hook separately.
+1. Actual reboot recovery and Nginx certificate reload after real renewal remain untested; schedule maintenance separately.
 2. Add reviewed existing-site adoption procedure and reproducible archive/dependency integrity checks to repository release tooling; do not create a conflicting Nginx site. For future processing releases add safe job drainage and migration/rollback gates. Do not assume full data rollback from code rollback.
 3. Test browser logout, session revocation, admin settings and both Studio tabs. Verify host service allowlist and existing sites independently.
 4. Implement/test Clip Extractor, Person Analyzer, persistent queue and independent SaladCloud GPU integration. The deployed foundation Studio processing pages are placeholders; no live media processing or GPU acceptance has been demonstrated.
