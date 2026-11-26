@@ -86,26 +86,46 @@ class StudioWindow(MainWindow):
     def _filters_dialog_closed(self):
         if getattr(self,'studio_ready',False):self.page_tabs.setCurrentIndex(self._content_tab)
         else:super()._filters_dialog_closed()
-    def transfer_ranges(self):
-        if not self._pending_analyzer_ranges or not self.video_info:return
-        path,ranges=self._pending_analyzer_ranges
-        if str(self.video_info.path.resolve())!=path:return
+    def request_analyzer_ranges(self,path,ranges):
+        path=Path(path).resolve()
+        if not path.is_file() or not ranges:
+            QMessageBox.warning(self,'Transfer clips','Source video or eligible clips are missing.');return False
+        if self._video_job_running() or self.batch_page.is_running() or any(w and w.isRunning() for w in (self.probe_worker,self.find_worker)):
+            QMessageBox.warning(self,'Transfer clips','Wait for the active video job to finish.');return False
         self._pending_analyzer_ranges=None
-        # Preserve overlapping people appearances as one union for extraction.
-        merged=[]
-        from core.models import ClipRange
-        for r in sorted(ranges,key=lambda r:r.start_ms):
-            if merged and r.start_ms<merged[-1].end_ms:merged[-1]=ClipRange(merged[-1].start_ms,max(merged[-1].end_ms,r.end_ms))
-            else:merged.append(r)
-        self.right_panel.set_clips(merged) if hasattr(self.right_panel,'set_clips') else None
-        # The upstream right panel owns clip storage through its model.
-        self._load_transferred(merged)
+        if self.video_info and self.video_info.path.resolve()==path:
+            return self._load_transferred(ranges)
+        previous=self.probe_worker
+        self.open_video(path)
+        if self.probe_worker is previous:return False
+        self._pending_analyzer_ranges=(path,ranges,self.probe_worker)
+        return True
+    def _video_open_failed(self,detail):
+        self._pending_analyzer_ranges=None
+        super()._video_open_failed(detail)
+    def transfer_ranges(self):
+        if not self._pending_analyzer_ranges:return
+        path,ranges,worker=self._pending_analyzer_ranges
+        if self.probe_worker is not worker:
+            self._pending_analyzer_ranges=None;return
+        if worker.isRunning():return
+        self._pending_analyzer_ranges=None
+        if not self.video_info or self.video_info.path.resolve()!=path:return
+        if self._video_job_running() or self.batch_page.is_running():return
+        self._load_transferred(ranges)
     def _load_transferred(self,ranges):
-        from core.project_state import save_ranges
-        save_ranges(self.video_info.path,ranges)
+        from core.project_state import load_ranges,save_ranges
+        path=self.video_info.path
+        existing=load_ranges(path)
+        if existing and existing!=ranges:
+            if QMessageBox.question(self,'Replace extractor clips','Replace existing extractor clip ranges with the selected person appearances?',QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return False
+        try:save_ranges(path,ranges)
+        except (OSError,ValueError) as exc:
+            QMessageBox.warning(self,'Transfer failed',str(exc));return False
         self.right_panel.set_clips(ranges)
         self.timeline.detections=[r.start_ms for r in ranges]
         self.timeline.update()
+        return True
     def _video_job_running(self):
         upstream=super()._video_job_running()
         return upstream or (getattr(self,'studio_ready',False) and (self.analyzer_page.busy or self.replacement_page.task.busy))
