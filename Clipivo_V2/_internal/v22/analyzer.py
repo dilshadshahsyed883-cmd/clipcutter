@@ -20,9 +20,11 @@ def intervals(samples,duration,step):
 
 def assign(groups,embedding,used,threshold):
     candidates=[(float(np.dot(unit(g['_sum']),embedding)),i) for i,g in enumerate(groups) if i not in used]
-    score,i=max(candidates,default=(-1,-1))
-    if score>=threshold: return i
-    groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False}); return len(groups)-1
+    candidates.sort(key=lambda pair:(-pair[0],pair[1]))
+    score,i=candidates[0] if candidates else (-1,-1)
+    runner=candidates[1][0] if len(candidates)>1 else -1
+    if score>=threshold and score-runner>=.08: return i
+    groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
 def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None):
     if step<=0 or not 0<threshold<1: raise ValueError('Invalid analysis settings')
@@ -37,7 +39,7 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
             ok=cap.grab()
             if not ok: break
             timestamp=cap.get(cv2.CAP_PROP_POS_MSEC)/1000; nominal=frames/fps; frames+=1
-            t=timestamp if timestamp>=0 and timestamp>last else nominal
+            t=timestamp if timestamp>=0 and timestamp>last else max(nominal,last+1/fps)
             last=t
             if t+1e-6<next_t: continue
             while next_t<=t+1e-6: next_t+=step
@@ -94,10 +96,19 @@ def merge_groups(data, ids):
     gs=[g for g in data['people'] if g['id'] in ids]
     if len(gs)<2: raise ValueError('Select at least two groups')
     for g in gs[1:]: gs[0]['observations'].extend(g['observations'])
-    data['people']=[g for g in data['people'] if g not in gs[1:]]; refresh(data)
+    gs[0]['observations'].sort(key=lambda o:o['time'])
+    clear_identity(gs[0])
+    gs[0]['name']='Merged person (review)'
+    removed={g['id'] for g in gs[1:]}
+    data['people']=[g for g in data['people'] if g['id'] not in removed]; refresh(data)
+
+def clear_identity(group):
+    for key in ('library_id','match_score','match_candidate'):
+        group.pop(key,None)
+    group['identity_status']='uncertain'
 
 def split_group(data,id,indices):
     g=next(g for g in data['people'] if g['id']==id); chosen=set(indices)
-    if not chosen or len(chosen)>=len(g['observations']): raise ValueError('Select some, but not all observations')
-    new=dict(id=uuid.uuid4().hex[:12],name=g['name']+' (split)',observations=[o for i,o in enumerate(g['observations']) if i in chosen],ignored=False)
-    g['observations']=[o for i,o in enumerate(g['observations']) if i not in chosen]; data['people'].append(new); refresh(data)
+    if not chosen or len(chosen)>=len(g['observations']) or any(i<0 or i>=len(g['observations']) for i in chosen): raise ValueError('Select some, but not all observations')
+    new=dict(id=uuid.uuid4().hex[:12],name='Split person (review)',identity_status='uncertain',observations=[o for i,o in enumerate(g['observations']) if i in chosen],ignored=False)
+    g['observations']=[o for i,o in enumerate(g['observations']) if i not in chosen]; clear_identity(g); g['name']='Person (review)'; data['people'].append(new); refresh(data)
