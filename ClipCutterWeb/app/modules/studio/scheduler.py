@@ -20,6 +20,12 @@ def authorized(store,cfg=None):
         cfg.salad_container_group=="clipcutter-gpu" and cfg.parallel==1 and
         cfg.worker_gateway==os.environ.get("CLIPCUTTER_APPROVED_WORKER_GATEWAY"))))
 
+POLICY_FIELDS={"auto_start","image_pull_threshold","image_pull_seconds",
+               "salad_max_reallocations","salad_reallocate_cooldown"}
+
+def policy_only_change(old,new):
+    return old.model_dump(exclude=POLICY_FIELDS)==new.model_dump(exclude=POLICY_FIELDS)
+
 class Control:
     def __init__(self,store):
         self.store=store
@@ -140,9 +146,17 @@ def main():
         scheduler=Scheduler(store,api,worker,cfg)
         try:
             while True:
-                # Restart required for config/credential changes; no silent retargeting.
-                if gpu.snapshot()!=(cfg,key,token):
-                    scheduler.control.mark("configuration_changed_restart_required");break
+                # Reload only automation policy, never credentials or destination.
+                updated,new_key,new_token=gpu.snapshot()
+                if (updated,new_key,new_token)!=(cfg,key,token):
+                    if (new_key,new_token)!=(key,token) or not policy_only_change(cfg,updated) or not authorized(store,updated):
+                        scheduler.control.mark("configuration_changed_restart_required");break
+                    # Complete pending manual start/stop under its original mode.
+                    if not scheduler.control.snapshot()["action"]:
+                        cfg=updated
+                        scheduler.cfg=cfg
+                        scheduler.lifecycle.cfg=cfg
+                        scheduler.lifecycle.idle_since=None
                 result=None
                 try:result=scheduler.tick()
                 except Exception:
