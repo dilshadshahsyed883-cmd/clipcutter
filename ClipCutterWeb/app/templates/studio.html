@@ -6,8 +6,8 @@
 <p class="studio-note" role="status" id="studio-capabilities">Checking connection…</p>
 <form id="studio-form">
 <div class="studio-grid">
-<label>Google Drive source link <input name="source" type="url" required maxlength="2048" placeholder="https://drive.google.com/…" autocomplete="off"></label>
-<label>Source type <select name="source_kind"><option value="video">Single video</option><option value="zip">ZIP package</option><option value="folder">Drive folder</option></select></label>
+<label>Source link (Drive / YouTube) <input name="source" type="url" required maxlength="2048" placeholder="https://drive.google.com/…" autocomplete="off"></label>
+<label>Source type <select name="source_kind"><option value="video">Single video</option><option value="zip">ZIP package</option><option value="folder">Drive folder</option><option value="youtube">YouTube video (1080p max, no audio)</option></select></label>
 <label>Output Drive folder (optional) <input name="output_folder" type="url" maxlength="2048" autocomplete="off"></label>
 <label>Reference images — Drive file/folder {% if page.key == 'analyzer' %}(optional){% endif %}<input name="reference_link" type="url" maxlength="2048" autocomplete="off"></label>
 </div>
@@ -38,7 +38,7 @@
 </div>
 <h3>Ignore regions (normalized 0–1, x / y / width / height)</h3><div id="region-list"></div><button type="button" id="add-region" class="studio-secondary">Add region</button>
 {% endif %}
-<p class="studio-note">Input links must be accessible to the configured Drive account. Save a request, then select Download input in the queue. No GPU job will start.</p>
+<p class="studio-note">Drive links must be accessible to the configured Drive account. YouTube supports authorized single videos only, without audio. Save a request, then select Download input in the queue. No GPU job will start.</p>
 <div class="studio-actions"><button type="submit" id="save-request">Save request</button><span id="studio-status" role="status" aria-live="polite"></span></div>
 </form>
 </section>
@@ -55,4 +55,4 @@
 <h2>Verified outputs</h2><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-review-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-youtube-1"></script>

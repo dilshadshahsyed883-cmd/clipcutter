@@ -20,11 +20,30 @@ def drive_link(value):
         pass
     raise ValueError("Use an HTTPS Google Drive file or folder link")
 
+def youtube_link(value):
+    """Only canonical single-video HTTPS links, never arbitrary URLs or playlists."""
+    try:
+        u=urlsplit(value)
+        if u.scheme!="https" or u.fragment:
+            raise ValueError()
+        if u.netloc in ("www.youtube.com","youtube.com","m.youtube.com") and u.path=="/watch":
+            ids=parse_qs(u.query).get("v",[])
+            vid=ids[0] if len(ids)==1 else ""
+        elif u.netloc=="youtu.be":
+            vid=u.path.removeprefix("/")
+        else:
+            raise ValueError()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}",vid):
+            raise ValueError()
+        return "https://www.youtube.com/watch?v="+vid
+    except (TypeError,ValueError,AttributeError):
+        raise ValueError("Use a single HTTPS YouTube video link") from None
+
 class Input(Strict):
     source: str=Field(min_length=1,max_length=2048)
-    source_kind: Literal["video","zip","folder"]="video"
+    source_kind: Literal["video","zip","folder","youtube"]="video"
     output_folder: str | None=Field(default=None,max_length=2048)
-    @field_validator("source","output_folder")
+    @field_validator("output_folder")
     @classmethod
     def validate_link(cls,v):
         return drive_link(v) if v is not None else None
@@ -32,6 +51,10 @@ class Input(Strict):
     def kind(self):
         if self.output_folder and "/folders/" not in urlsplit(self.output_folder).path:
             raise ValueError("Output destination must be a Drive folder")
+        if self.source_kind=="youtube":
+            self.source=youtube_link(self.source)
+            return self
+        self.source=drive_link(self.source)
         if ("/folders/" in urlsplit(self.source).path)!=(self.source_kind=="folder"):
             raise ValueError("Source type must match the Drive file or folder link")
         return self
@@ -103,6 +126,8 @@ class JobRequest(Strict):
     request_id: str=Field(pattern=r"^[a-f0-9]{32}$")
     @model_validator(mode="after")
     def check(self):
-        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind!="video":
+        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind not in ("video","youtube"):
             raise ValueError("Manual ranges require a single video source")
+        if self.input.source_kind=="youtube" and isinstance(self.settings,Extractor) and self.settings.include_audio:
+            raise ValueError("YouTube intake is video-only; select Remove audio")
         return self
