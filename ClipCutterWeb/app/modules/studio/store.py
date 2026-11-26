@@ -47,6 +47,8 @@ class Store:
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
                 progress REAL, message TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS request_identities(job_id TEXT PRIMARY KEY REFERENCES requests(id),identity_id TEXT NOT NULL,label TEXT NOT NULL,slug TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS gpu_commands(job_id TEXT PRIMARY KEY REFERENCES requests(id), action TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS gpu_attempt_history(attempt_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, phase TEXT NOT NULL, recorded_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS outputs(
                 job_id TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL,
                 sha256 TEXT NOT NULL, media_type TEXT NOT NULL,
@@ -102,7 +104,14 @@ class Store:
     def list(self,kind):
         with self.connect() as c:
             rows=c.execute("SELECT * FROM requests WHERE owner=? AND kind=? AND state!='deleted' ORDER BY created_at DESC,id DESC LIMIT 200",(self.owner,kind)).fetchall()
-            return [self.public(r) for r in rows]
+            result=[self.public(r) for r in rows]
+            table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
+            for item in result:
+                a=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(item["id"],)).fetchone() if table else None
+                cmd=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(item["id"],)).fetchone()
+                item["gpu_phase"]=a["phase"] if a else None
+                item["gpu_command"]=cmd["action"] if cmd else None
+            return result
 
     def row(self,c,jid):
         if not re.fullmatch(r"[a-f0-9]{32}",jid): raise HTTPException(404,"Request not found")
@@ -135,8 +144,9 @@ class Store:
                 raise HTTPException(409,"Active or batch parent requests cannot be deleted")
             if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone():
                 attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
-                if attempt and attempt["phase"] not in ("acknowledged","failed","cancelled"):
+                if attempt and attempt["phase"] not in ("acknowledged","failed_clean","cancelled_clean"):
                     raise HTTPException(409,"GPU attempt must be reconciled before deletion")
+            if c.execute("SELECT 1 FROM gpu_commands WHERE job_id=?",(jid,)).fetchone():raise HTTPException(409,"GPU action pending")
             c.execute("UPDATE requests SET state='deleted',message='Deleted by owner',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
             return self.public(self.row(c,jid))
 
@@ -148,6 +158,27 @@ class Store:
             if row["state"]!="awaiting_input": raise HTTPException(409,"Request cannot be cancelled by this control")
             c.execute("UPDATE requests SET state='cancelled',message='Cancelled before input intake',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
             return self.public(self.row(c,jid))
+
+    def gpu_command(self,jid,action):
+        """Durable owner intent; HTTP never directly calls the GPU."""
+        if action not in ("cancel","retry"):raise ValueError("Invalid GPU action")
+        with self.admission(),self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=self.row(c,jid)
+            table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
+            attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone() if table else None
+            if action=="cancel" and row["state"]=="ready" and not attempt:
+                c.execute("UPDATE requests SET state='cancelled',message='Cancelled before GPU dispatch; verified inputs retained',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
+                return {"accepted":True,"action":action}
+            if action=="retry":
+                if row["state"]!="failed" or not attempt or attempt["phase"] not in ("failed","failed_clean"):
+                    raise HTTPException(409,"Retry requires a confirmed failed GPU attempt")
+            elif row["state"] not in ("ready","processing") or not attempt or attempt["phase"] not in ("new","create_intent","staging","start_intent","processing"):
+                raise HTTPException(409,"No cancellable GPU attempt")
+            old=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(jid,)).fetchone()
+            if old and old["action"]!=action:raise HTTPException(409,"GPU action pending")
+            c.execute("INSERT OR IGNORE INTO gpu_commands VALUES (?,?)",(jid,action))
+        return {"accepted":True,"action":action}
 
     def output_list(self,jid):
         with self.connect() as c:

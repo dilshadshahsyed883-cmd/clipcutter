@@ -281,12 +281,18 @@
      if(!data.requests.some(item=>!deleted.has(item.id))){const tr=document.createElement("tr"),td=put("td","No requests yet.");td.colSpan=5;tr.append(td);rows.append(tr);}
      for(const job of data.requests.filter(item=>!deleted.has(item.id))){const tr=document.createElement("tr");tr.dataset.requestId=job.id;
        const gpuUploading=job.state==="ready"&&job.message.startsWith("GPU uploading:");
-       [job.id.slice(0,8),gpuUploading?"Uploading to GPU":job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
+       [job.id.slice(0,8),gpuUploading?(job.progress===100?"GPU input ready":"Uploading to GPU"):job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:")))actions.append(button("Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
-       if(!gpuUploading&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
+       if(job.gpu_command)actions.append(put("span",job.gpu_command==="cancel"?"Cancellation pending":"Retry pending"));
+       else{
+         const gpuAction=(name,action)=>button(name,async()=>{try{await api("/requests/"+job.id+"/gpu/"+action,"POST");status.textContent="GPU "+action+" requested";await refresh();}catch(err){status.textContent=err.message;}});
+         if(job.state==="ready"&&(!job.gpu_phase||["new","create_intent","staging","start_intent"].includes(job.gpu_phase))||job.state==="processing"&&["start_intent","processing"].includes(job.gpu_phase))actions.append(gpuAction("Cancel GPU","cancel"));
+         if(job.state==="failed"&&["failed","failed_clean"].includes(job.gpu_phase))actions.append(gpuAction("Retry GPU","retry"));
+       }
+       if(!job.gpu_command&&!gpuUploading&&(!job.gpu_phase||["acknowledged","failed_clean","cancelled_clean"].includes(job.gpu_phase))&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
          const remove=button(deleting.has(job.id)?"Deleting…":"Delete",async()=>{
            if(deleting.has(job.id)||deleted.has(job.id))return;
            deleting.add(job.id);remove.disabled=true;remove.textContent="Deleting…";

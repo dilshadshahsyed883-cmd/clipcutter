@@ -5,6 +5,7 @@ Never recreate a lost attempt automatically; the VPS keeps verified inputs.
 """
 import fcntl
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -77,7 +78,7 @@ class WorkerClient:
         x=self.request("GET","/api/capabilities")
         if (x.get("source_sha")!=self.expected_sha or x.get("contract_version")!=2 or
             x.get("transport")!="verified-chunks-v1" or x.get("chunk_bytes")!=CHUNK or
-            x.get("ready") is not True or x.get("dispatch_enabled") is not True or x.get("concurrency")!=1):
+            x.get("ready") is not True or x.get("dispatch_enabled") is not True or (type(x.get("concurrency")) is not int or x["concurrency"] not in (1,2))):
             raise DispatchError("Approved worker version not ready")
         return x
     def create(self,a,m):return self.request("POST","/api/jobs/"+a,m)
@@ -126,6 +127,55 @@ class Dispatcher:
             c.execute("BEGIN IMMEDIATE");self.store.row(c,jid)
             c.execute("UPDATE gpu_attempts SET phase=?,result_sha=COALESCE(?,result_sha),review_json=COALESCE(?,review_json) WHERE job_id=?",
                       (phase,result_sha,canonical(review).decode() if review is not None else None,jid))
+    def command(self,jid):
+        with self.store.connect() as c:
+            row=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(jid,)).fetchone()
+            return row["action"] if row else None
+    def clear_command(self,jid,action):
+        with self.store.connect() as c:
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action=?",(jid,action))
+    def clean_terminal(self,jid,row,m,remote):
+        state=remote.get("state")
+        if state not in ("failed","cancelled"):raise DispatchError("Terminal cleanup requires confirmed failure/cancellation")
+        # Keep verified VPS sources and any local partial outputs; only discard
+        # worker scratch for a confirmed terminal attempt with a durable ledger.
+        ack=self.client.purge(row["attempt_id"],"discard-failed")
+        self._validate(ack,row,m)
+        if ack.get("state")!=state or ack.get("purged") is not True:
+            raise DispatchError("Terminal attempt cleanup unconfirmed")
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            self.store.row(c,jid)
+            c.execute("INSERT OR IGNORE INTO gpu_attempt_history VALUES (?,?,?,?)",(row["attempt_id"],jid,state,int(time.time())))
+            c.execute("UPDATE gpu_attempts SET phase=? WHERE job_id=? AND attempt_id=?",(state+"_clean",jid,row["attempt_id"]))
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='cancel'",(jid,))
+        return state+"_clean"
+
+    def retry_failed(self,jid,row,m):
+        a=row["attempt_id"]
+        if row["phase"]!="failed_clean":raise DispatchError("Retry requires confirmed failed attempt cleanup")
+        # Never overwrite partial delivery or published output.
+        for folder in ("outputs","delivery-parts"):
+            p=self.store.root/folder/jid
+            if p.exists() and any(p.iterdir()):raise DispatchError("Existing output requires manual reconciliation")
+        root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
+        for name,item in m["files"].items():
+            filename=mapping[name]
+            if not NAME.fullmatch(filename):raise DispatchError("Unsafe staged input")
+            p=root/filename
+            if p.resolve()!=p or not p.is_file() or p.stat().st_size!=item["size"] or sha_file(p)!=item["sha256"]:
+                raise DispatchError("Verified inputs changed; retry held")
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            current=self.store.row(c,jid)
+            if current["state"]!="failed":raise DispatchError("Retry state changed")
+            c.execute("INSERT OR IGNORE INTO gpu_attempt_history VALUES (?,?,?,?)",(a,jid,"failed",int(time.time())))
+            changed=c.execute("UPDATE gpu_attempts SET attempt_id=?,phase='new',result_sha=NULL,worker_sha=?,gateway=? WHERE job_id=? AND attempt_id=? AND phase='failed_clean'",(uuid4().hex,self.client.expected_sha,self.client.origin,jid,a)).rowcount
+            if changed!=1:raise DispatchError("Retry attempt changed")
+            c.execute("UPDATE requests SET state='ready',progress=100,message='Verified inputs retained; GPU retry queued',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.store.owner))
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='retry'",(jid,))
+        return "retry_queued"
+
     def _pending(self,c):
         return c.execute("SELECT count(*) FROM requests WHERE owner=? AND state IN ('awaiting_input','staging')",(self.store.owner,)).fetchone()[0]
     def prepare(self,jid,*,allow_during_intake=False):
@@ -168,38 +218,64 @@ class Dispatcher:
             if c.execute("SELECT 1 FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone():return
             c.execute("INSERT INTO gpu_attempts VALUES (?,?,?,?,?,?,?,NULL,NULL)",
                       (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"new",self.client.expected_sha,self.client.origin))
-    def tick(self,jid,*,allow_start=True,allow_during_intake=False):
+    def tick(self,jid,*,allow_start=True,allow_during_intake=False,render_limit=1,observe_only=False,may_start=None):
         if not ID.fullmatch(jid):raise DispatchError("Invalid job id")
         locks=safe_dir(self.store.root/"dispatch-locks")
-        # One owner-wide dispatch operation at a time, including across processes.
-        with os.fdopen(os.open(locks/"dispatcher.lock",os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
+        # One operation per durable job; scheduler owns cross-job lane admission.
+        with os.fdopen(os.open(locks/(jid+".lock"),os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return "busy"
             row=self._row(jid)
             if not row:
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
+            command=self.command(jid)
+            a=row["attempt_id"];m=json.loads(row["manifest"])
+            if row["phase"]=="failed_clean" and command=="retry":
+                return self.retry_failed(jid,row,m)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
-            if row["phase"] in ("review_ready","acknowledged","failed","cancelled"):return row["phase"]
+            if row["phase"]=="new" and command=="cancel":
+                with self.store.connect() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    if self.store.row(c,jid)["state"]!="ready":raise DispatchError("Local cancellation state changed")
+                    c.execute("UPDATE requests SET state='cancelled',message='Cancelled before GPU dispatch; inputs retained',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.store.owner))
+                    c.execute("UPDATE gpu_attempts SET phase='cancelled_clean' WHERE job_id=? AND attempt_id=?",(jid,a))
+                    c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='cancel'",(jid,))
+                return "cancelled_clean"
+            if row["phase"] in ("review_ready","acknowledged","failed_clean","cancelled_clean") and not command:return row["phase"]
             caps=self.client.capabilities()
-            a=row["attempt_id"];m=json.loads(row["manifest"])
+            if row["phase"] in ("failed","cancelled"):
+                remote=self.client.status(a);self._validate(remote,row,m)
+                if remote.get("state")!=row["phase"]:raise DispatchError("Terminal attempt status changed")
+                return self.clean_terminal(jid,row,m,remote)
             if row["phase"]=="new":
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
+                if render_limit>1 and (caps.get("pipeline_version")!=1 or caps.get("concurrency")!=2):raise DispatchError("Worker capacity mismatch")
                 if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
                     raise DispatchError("Approved worker does not advertise YouTube support")
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 # Persist intent before any remote side effect. If the remote is missing
                 # after ambiguity, do not silently recreate; require reconciliation.
-                self._phase(jid,"create_intent")
-                remote=self.client.create(a,m)
+                with self.store.admission() if may_start else nullcontext():
+                    if may_start and not may_start():return "paused"
+                    if self.command(jid)=="cancel":return "cancel_pending"
+                    self._phase(jid,"create_intent")
+                    remote=self.client.create(a,m)
             else:remote=self.client.status(a)
             self._validate(remote,row,m)
             state=remote["state"];local=self.store.get(jid)["state"]
+            if command=="cancel" and state in ("staging","queued","running"):
+                remote=self.client.cancel(a);self._validate(remote,row,m)
+                state=remote["state"]
+            if command=="cancel" and state=="completed":
+                self.clear_command(jid,"cancel") # completion wins; preserve output
             if state=="staging":
-                if row["phase"] in ("start_intent","processing","delivering","published"):
+                if row["phase"] in ("processing","output_ready","delivering","published"):
                     raise DispatchError("Remote reverted to staging; reconcile")
+                # Same immutable attempt, verified staging state: replaying start
+                # is safe because the worker starts each attempt only once.
                 self._phase(jid,"staging")
                 offsets=remote.get("uploaded")
                 if not isinstance(offsets,dict):raise DispatchError("Invalid remote offsets")
@@ -209,7 +285,8 @@ class Dispatcher:
                     if type(offset) is not int or not 0<=offset<=item["size"]:raise DispatchError("Invalid remote offset")
                 acknowledged=sum(offsets[name] for name in m["files"])
                 self.store.gpu_upload_progress(jid,acknowledged,total)
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
+                if render_limit>1 and (caps.get("pipeline_version")!=1 or caps.get("concurrency")!=2):raise DispatchError("Worker capacity mismatch")
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
@@ -224,11 +301,17 @@ class Dispatcher:
                         if type(result.get("offset")) is not int or result["offset"]!=offset+len(chunk):raise DispatchError("Unexpected upload acknowledgement")
                         self.store.gpu_upload_progress(jid,acknowledged+len(chunk),total)
                         return "staging"
-                if caps.get("active_renders")!=0:return "gpu_busy"
+                active=caps.get("active_renders")
+                if type(active) is not int or not 0<=active<min(render_limit,caps.get("concurrency",1)):
+                    return "preloaded"
+                if may_start and not may_start():return "paused"
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
-                self._phase(jid,"start_intent")
-                remote=self.client.start(a)
+                with self.store.admission() if may_start else nullcontext():
+                    if may_start and not may_start():return "paused"
+                    if self.command(jid)=="cancel":return "cancel_pending"
+                    self._phase(jid,"start_intent")
+                    remote=self.client.start(a)
                 self._validate(remote,row,m)
                 state=remote["state"]
             if state in ("queued","running","cancelling"):
@@ -247,8 +330,12 @@ class Dispatcher:
                 if local in ("ready","processing","delivering"):
                     target="cancelled" if state=="cancelled" and local!="delivering" else "failed"
                     self.store.transition(jid,local,target,"GPU: "+str(remote.get("error") or state)[:500])
-                self._phase(jid,state);return state
-            if state=="completed":return self.receive(jid,row,m,remote)
+                self._phase(jid,state)
+                return self.clean_terminal(jid,row,m,remote)
+            if state=="completed":
+                if observe_only:
+                    self._phase(jid,"output_ready");return "output_ready"
+                return self.receive(jid,row,m,remote)
             raise DispatchError("Unknown worker state")
     def _validate(self,remote,row,m):
         if (remote.get("attempt_id")!=row["attempt_id"] or remote.get("job_id")!=row["job_id"] or

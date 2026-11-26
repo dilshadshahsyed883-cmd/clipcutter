@@ -1,4 +1,4 @@
-"""Verified chunk transport. One GPU slot until physical concurrency acceptance."""
+"""Verified chunk transport with explicitly configured one or two processing slots."""
 import hashlib
 import json
 import os
@@ -36,7 +36,10 @@ def digest(p,cancel=lambda:False):
     return h.hexdigest()
 
 class Worker:
-    def __init__(self,root,ready,launch=None):
+    def __init__(self,root,ready,launch=None,concurrency=None):
+        if concurrency is None:concurrency=int(os.environ.get("CLIPCUTTER_GPU_CONCURRENCY","1"))
+        if type(concurrency) is not int or concurrency not in (1,2):raise ValueError("GPU concurrency must be 1 or 2")
+        self.concurrency=concurrency
         self.root=Path(root).resolve();self.root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.ready=ready;self.launch=launch or self._launch
         self.lock=RLock();self.records={};self.threads={};self.stopping=False
@@ -68,7 +71,7 @@ class Worker:
             return json.loads(canonical(out))
     def metrics(self):
         with self.lock:
-            return {"active_renders":sum(r["state"] in ACTIVE for r in self.records.values()),"concurrency":1,
+            return {"active_renders":sum(r["state"] in ACTIVE for r in self.records.values()),"concurrency":self.concurrency,"pipeline_version":1,
                 "staging":sum(r["state"]=="staging" for r in self.records.values()),
                 "undelivered":sum(r["state"]=="completed" and not r["purged"] for r in self.records.values())}
     def create(self,a,body):
@@ -130,7 +133,7 @@ class Worker:
             rec=self.get(a)
             if rec["state"]!="staging":return self.snapshot(a)
             if self.stopping or not self.ready():raise ApiError(503,"Worker not ready")
-            if self.metrics()["active_renders"]:raise ApiError(429,"GPU slot busy")
+            if self.metrics()["active_renders"]>=self.concurrency:raise ApiError(429,"GPU slots busy")
             for n,x in rec["files"].items():
                 p=self.folder(a)/"input"/n
                 if not p.is_file() or p.stat().st_size!=x["size"]:raise ApiError(409,"Incomplete staged input")
