@@ -1,4 +1,4 @@
-# Clipivo V2.3 / Clipcutter — development checkpoint
+# Clipivo V2.3.1 / Clipcutter — development checkpoint
 
 One Qt desktop application with Clip Extractor, Person Analyzer, Replacement Studio, Batch, People Library and Settings. It reuses the original Clipivo layout shown in the owner's reference screenshot.
 
@@ -36,3 +36,7 @@ See `THIRD_PARTY.md` and `../licenses/LICENSE-AGPL-3.0.txt` for attribution and 
 ## PC-testing source layout and storage
 
 Only `START_V2.bat` and `_internal` belong in the source-folder root. Run the launcher from any location. It creates/reuses the AppData runtime, sets pip and temporary caches to `%LOCALAPPDATA%\ClipivoV2\cache`, and preserves old local virtual environments untouched. Export cache is `%LOCALAPPDATA%\ClipivoV2\cache\export`; original model/FFmpeg downloads are in `%LOCALAPPDATA%\Clipivo`, Studio model downloads in `%LOCALAPPDATA%\ClipivoV2\models`, Node in `%LOCALAPPDATA%\ClipivoV2\runtime\node`. Existing legacy stores and externally supplied verified models are not moved or deleted. Source replacement does not replace user data. Explicit output locations remain user-controlled. A broken existing AppData runtime is reported rather than deleted.
+
+## 2.3.1 workflow
+
+Select a reference and footage folder in Replacement Studio, then Generate timeline. New analyses are indexed in AppData; matching compatible cached analyses are reused. Review missing/uncertain results manually, approve valid selections, then render or open in CapCut. Advanced controls remain available. Existing old projects are not automatically registered without reliable provenance. See PLAN_2_3_1.md for limitations and outstanding work.

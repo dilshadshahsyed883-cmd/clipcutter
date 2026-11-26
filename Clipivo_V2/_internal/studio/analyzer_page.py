@@ -10,6 +10,8 @@ from .models import resolve_models
 from v22.engine import Engine
 from .storage import root,load_settings,save_settings,new_project,remember,Profiles
 from .analysis import run,open_project
+from .analysis_library import AnalysisLibrary,source_stamp
+import sqlite3
 from .workers import Task
 from .widgets import Preview,Timeline
 
@@ -24,16 +26,16 @@ class AnalyzerPage(QWidget):
         super().__init__();self.window=window;self.data=None;self.folder=None;self.video='';self.cap=None;self.position=0.;self.playing=False;self.solo=None;self.live_count=0;self.scanning=False;self._active=False;self._previous=None;self.started=0.;self.cfg=load_settings();self.filters={**DEFAULTS,**self.cfg.get('filters',{}),'regions':self.cfg.get('filters',{}).get('regions',[])}
         self.task=Task(self);self.task.done.connect(self.completed);self.task.failed.connect(self.failed);self.task.progress.connect(self.progress);self.task.finished.connect(self.finished)
         layout=QVBoxLayout(self);head=QHBoxLayout();layout.addLayout(head)
-        button('Open video',self.choose_video,head);button('Open project',self.choose_project,head);button('Recent',self.open_recent,head);self.file_label=QLabel('No video loaded');head.addWidget(self.file_label,1)
-        self.analyze_button=button('Analyze people',self.analyze,head);self.cancel_button=button('Cancel',self.cancel_analysis,head);self.cancel_button.setEnabled(False)
+        button('Open video',self.choose_video,head);button('Open project',self.choose_project,head);button('Recent',self.open_recent,head);button('Open output',self.open_output,head);self.file_label=QLabel('No video loaded');head.addWidget(self.file_label,1)
+        self.analyze_button=button('Analyze / Reanalyze',self.analyze,head);self.cancel_button=button('Cancel',self.cancel_analysis,head);self.cancel_button.setEnabled(False)
         body=QSplitter();layout.addWidget(body,1);center=QWidget();cl=QVBoxLayout(center);self.preview=Preview();self.preview.regionAdded.connect(self.add_region);cl.addWidget(self.preview,1)
         transport=QHBoxLayout();cl.addLayout(transport);button('▶ / Ⅱ',self.toggle_play,transport);self.seekbar=QSlider(Qt.Horizontal);self.seekbar.setRange(0,10000);self.seekbar.sliderMoved.connect(lambda v:self.seek(v/10000*self.duration()));transport.addWidget(self.seekbar,1);self.clock=QLabel('0.00 s');transport.addWidget(self.clock)
-        self.timeline=Timeline();self.timeline.seekRequested.connect(self.seek);cl.addWidget(scroll(self.timeline));body.addWidget(center)
+        self.timeline=Timeline();self.timeline.seekRequested.connect(self.seek);zoom=QHBoxLayout();cl.addLayout(zoom);zoom.addWidget(QLabel('Timeline zoom'));self.zoom=QSlider(Qt.Horizontal);self.zoom.setRange(1,8);self.zoom.setValue(1);self.zoom.valueChanged.connect(self.timeline.set_zoom);zoom.addWidget(self.zoom);cl.addWidget(scroll(self.timeline));body.addWidget(center)
         inspector=QWidget();inspector.setMinimumWidth(285);il=QVBoxLayout(inspector);il.addWidget(QLabel('Discovered people  •  Ctrl-click to select several'))
         self.tree=QTreeWidget();self.tree.setHeaderLabels(['Person','Seconds','State']);self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection);self.tree.itemSelectionChanged.connect(self.show_refs);il.addWidget(self.tree,1)
         row=QHBoxLayout();il.addLayout(row);button('Rename',self.rename,row);button('Merge',self.merge,row);button('Split',self.split,row)
         row=QHBoxLayout();il.addLayout(row);button('Ignore / Restore',self.ignore,row);button('Solo',self.toggle_solo,row);button('Delete',self.delete,row)
-        row=QHBoxLayout();il.addLayout(row);button('Save person',self.save_person,row);button('Use in extractor',self.to_extractor,row)
+        row=QHBoxLayout();il.addLayout(row);button('Save person',self.save_person,row);button('Use in extractor',self.to_extractor,row);button('Use in replacement',self.to_replacement,il)
         self.show_ignored=QCheckBox('Show ignored / filtered people');self.show_ignored.setChecked(True);self.show_ignored.toggled.connect(lambda _:self.refresh());il.addWidget(self.show_ignored)
         self.refs=QListWidget();self.refs.setViewMode(QListWidget.IconMode);self.refs.setMaximumHeight(145);self.refs.itemClicked.connect(lambda it:self.seek(it.data(Qt.UserRole)));il.addWidget(self.refs)
         row=QHBoxLayout();il.addLayout(row);button('Filters',self.filter_dialog,row);button('Ignore region',self.arm_region,row);button('Export files',self.export,row)
@@ -56,11 +58,17 @@ class AnalyzerPage(QWidget):
         if self.busy:return
         path,_=QFileDialog.getOpenFileName(self,'Video','','Videos (*.mp4 *.mkv *.mov *.avi *.webm *.m4v)')
         if path:self.set_video(path)
-    def set_video(self,path):
+    def set_video(self,path,reuse=True):
         if self.busy:return
-        self.pause();self.video=str(path);self.data=None;self.folder=None;self.solo=None;self.file_label.setText(Path(path).name)
+        self.pause();self.video=str(Path(path).resolve());self.data=None;self.folder=None;self.solo=None;self.file_label.setText(Path(path).name)
         if self.cap:self.cap.release()
         self.cap=cv2.VideoCapture(self.video);fps=self.cap.get(cv2.CAP_PROP_FPS);self.video_duration=self.cap.get(cv2.CAP_PROP_FRAME_COUNT)/fps if fps>0 else 0;self.refresh();self.seek(0)
+        if reuse:
+            try:
+                cached=AnalysisLibrary().find(self.video,load_settings())
+                if cached:self.load(cached[0]);self.stats.setText('Saved analysis reused. Reanalyze to refresh recognition or settings.')
+                else:self.stats.setText('Ready • Analyze to create a reusable project.')
+            except (OSError,ValueError,sqlite3.Error) as exc:self.stats.setText('Analysis lookup unavailable: '+str(exc))
     def choose_project(self):
         if self.busy:return
         path,_=QFileDialog.getOpenFileName(self,'Open V2.2 / V2.3 project',str(root()/'Projects'),'Analysis (analysis.json)')
@@ -74,7 +82,7 @@ class AnalyzerPage(QWidget):
     def load(self,path):
         if self.busy:return
         try:
-            data=open_project(path);self.set_video(data['source']);self.data=data;self.folder=Path(path).parent;self.filters={**DEFAULTS,**data.get('filters',{})};self.preview.regions=self.filters.get('regions',[]);remember(path);self.refresh();self.seek(0)
+            data=open_project(path);self.set_video(data['source'],reuse=False);self.data=data;self.folder=Path(path).parent;self.filters={**DEFAULTS,**data.get('filters',{})};self.preview.regions=self.filters.get('regions',[]);remember(path);self.refresh();self.seek(0)
         except Exception as e:self.failed(str(e))
     def analyze(self):
         if self.busy:return
@@ -86,6 +94,7 @@ class AnalyzerPage(QWidget):
             msg='Default InsightFace buffalo_l weights are for non-commercial research. Commercial use requires a separate model license. Accept these terms for research use, or choose licensed compatible models in Settings.'
             if QMessageBox.question(self,'Face model terms',msg,QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return
             save_settings({'model_license_accepted':True})
+        if self.data and QMessageBox.question(self,'Reanalyze','Create a new analysis? Your existing project and edits remain saved separately.',QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return
         self.pause()
         self._previous=(self.data,self.folder,self.position,self.solo)
         self.drain_preview();self._active=True;self.data=None;self.folder=new_project()
@@ -248,6 +257,21 @@ class AnalyzerPage(QWidget):
             self.window.people_page.refresh()
             if self.persist():self.stats.setText('Saved encrypted profile and references to People Library')
         except Exception as e:self.failed(str(e))
+    def open_output(self):
+        if not self.folder or not self.folder.is_dir():return
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
+    def to_replacement(self):
+        if not self.editable():return
+        if not self.data.get('source_stamp'):
+            self.stats.setText('Legacy project: verify the original source and reanalyze to enable automatic reuse. Manual identity transfer remains available.')
+        elif source_stamp(self.video)!=self.data['source_stamp']:
+            return self.failed('Source changed since analysis; reanalyze before transfer.')
+        page=self.window.replacement_page
+        if page.busy:return
+        self.window._select_page(2)
+        page.set_reference(self.video)
     def to_extractor(self):
         if not self.editable() or not self.selected():return
         from core.models import ClipRange

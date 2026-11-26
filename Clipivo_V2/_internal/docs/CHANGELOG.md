@@ -1,3 +1,9 @@
+# 2.3.1 automation source checkpoint
+
+- Central compatible analysis lookup, timeline zoom, open output, Analyzer-to-Replacement handoff.
+- Selected-folder automatic generation with conservative identities, Simple/Advanced controls, person column and validated bulk approval.
+- Windows acceptance pending. See PLAN_2_3_1.md.
+
 # Clean source layout — 26 November 2026
 
 - Root contains only launcher and `_internal`; move docs, licenses, reports, tests and disabled build recipe inside it.

@@ -51,3 +51,7 @@ Agent 1's stable analyzer busy state and extractor handoff are retained. Only ma
 ## Subsequent clean source layout checkpoint
 
 The PC-testing source tree is reorganized under `_internal`. AppData source launcher paths and persistent storage policy are documented; no user data or local environments are removed. Windows launch and complete regression execution remain pending. No executable build or workflow.
+
+## 2.3.1 automation source checkpoint
+
+See PLAN_2_3_1.md. Central lookup, simplified generation and analyzer controls are implemented in source. Native Windows, inference and full regression are not verified. The earlier sections are historical.

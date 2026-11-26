@@ -37,7 +37,9 @@ class Preview(QWidget):
 class Timeline(QWidget):
     seekRequested=Signal(float)
     def __init__(self):
-        super().__init__();self.data=None;self.position=0.;self.solo=None;self.ignored=True;self.setMinimumHeight(150)
+        super().__init__();self.data=None;self.position=0.;self.solo=None;self.ignored=True;self.zoom=1;self.setMinimumHeight(150)
+    def set_zoom(self,value):
+        self.zoom=int(value);self.setMinimumWidth(600*self.zoom if self.zoom>1 else 0);self.update()
     def visible(self):return [g for g in (self.data or {}).get('people',[]) if (self.ignored or not (g.get('ignored') or g.get('filtered'))) and (not self.solo or g['id']==self.solo)]
     def paintEvent(self,event):
         p=QPainter(self);p.fillRect(self.rect(),QColor('#171b22'));w=max(1,self.width()-135);d=max(.001,(self.data or {}).get('duration',1));groups=self.visible();self.setMinimumHeight(max(150,35+len(groups)*30))

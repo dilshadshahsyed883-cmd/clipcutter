@@ -57,14 +57,23 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
     return data
 
 def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
+    from .analysis_library import source_stamp, scan_key, AnalysisLibrary
+    stamp=source_stamp(video); scan=scan_key(cfg)
     data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}),engine=engine,persist=False)
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
     refresh(data)
-    match_profiles(data,profiles);data['studio_version']='2.3'
+    match_profiles(data,profiles);data['studio_version']='2.3.1'
     if cfg.get('model_signature'):data['model_signature']=cfg['model_signature']
     if cfg.get('profile_warnings'):data['profile_warnings']=cfg['profile_warnings']
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
-    save_project(folder,data);return data
+    if source_stamp(video)!=stamp or scan_key(cfg)!=scan:
+        raise ValueError('Source or model configuration changed during analysis; run again.')
+    data['source_stamp']=stamp;data['scan_key']=scan
+    save_project(folder,data)
+    try:AnalysisLibrary().register(Path(folder)/'analysis.json',data)
+    except (OSError, __import__('sqlite3').Error) as exc:
+        data['cache_warning']='Analysis saved; automatic lookup unavailable: '+str(exc)
+    return data
 
 def open_project(path):
     import json

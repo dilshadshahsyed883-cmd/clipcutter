@@ -1,3 +1,7 @@
+# 2.3.1 development checkpoint
+
+Source changes and regression coverage added; native Qt, Windows, real inference and full regression not executed. Previous results below are historical, not 2.3.1 certification.
+
 # Clean source layout checkpoint — 26 November 2026
 
 Static source/path checks only; Windows launcher, downloads and end-to-end regression not executed. Root layout, relocated resources and tests, AppData runtime and cache path contracts verified at source level. Existing models/tools/user data are not relocated. No executable build or workflow.

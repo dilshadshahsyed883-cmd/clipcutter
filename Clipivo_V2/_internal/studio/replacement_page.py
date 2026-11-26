@@ -2,7 +2,7 @@ import json,copy,uuid
 from pathlib import Path
 import cv2
 from PySide6.QtCore import Qt,QTimer
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QSplitter,QLabel,QPushButton,QFileDialog,QTableWidget,QTableWidgetItem,QComboBox,QDoubleSpinBox,QFormLayout,QDialog,QDialogButtonBox,QMessageBox,QInputDialog,QHeaderView
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QSplitter,QLabel,QPushButton,QFileDialog,QTableWidget,QTableWidgetItem,QComboBox,QDoubleSpinBox,QFormLayout,QDialog,QDialogButtonBox,QMessageBox,QInputDialog,QHeaderView,QCheckBox
 from v22.analyzer import atomic_json
 from .storage import root
 from .workers import Task
@@ -13,19 +13,22 @@ from .render import reconstruct
 
 class ReplacementPage(QWidget):
     def __init__(self,window):
-        super().__init__();self.window=window;self.reference=None;self.plan=None;self.index=Index();self.operation='';self.saved_plan=None;self._active=False
+        super().__init__();self.window=window;self.reference=None;self.plan=None;self.index=Index();self.operation='';self.saved_plan=None;self._active=False;self.footage_folder=None
         self.task=Task(self);self.task.done.connect(self.done);self.task.failed.connect(self.error);self.task.progress.connect(self.progress);self.task.finished.connect(self.finished)
         l=QVBoxLayout(self);bar=QHBoxLayout();l.addLayout(bar);self.actions=[]
-        for text,slot in [('Reference video',self.open_reference),('Index footage folder',self.index_folder),('Footage labels',self.labels),('Use analyzer identities',self.import_identities),('Match scenes',self.match),('Pick / rearrange clips',self.pick_clips),('Open plan',self.open_plan),('Save plan',self.save_plan)]:self.actions.append(button(text,slot,bar))
+        for text,slot in [('Reference video',self.open_reference),('Footage folder',self.choose_footage),('Generate timeline',self.generate_timeline),('Open plan',self.open_plan),('Save plan',self.save_plan)]:self.actions.append(button(text,slot,bar))
+        self.advanced=QCheckBox('Advanced');bar.addWidget(self.advanced);self.advanced_panel=QWidget();advanced_bar=QHBoxLayout(self.advanced_panel);l.addWidget(self.advanced_panel)
+        for text,slot in [('Index footage folder',self.index_folder),('Footage labels',self.labels),('Use analyzer identities',self.import_identities),('Match scenes',self.match),('Pick / rearrange clips',self.pick_clips)]:self.actions.append(button(text,slot,advanced_bar))
+        self.advanced_panel.hide();self.advanced.toggled.connect(self.advanced_panel.setVisible)
         self.cancel=button('Cancel',self.task.cancel,bar);self.cancel.setEnabled(False)
         self.heading=QLabel('Reference → reviewed footage → reconstruction');l.addWidget(self.heading)
         split=QSplitter();l.addWidget(split,1)
         a=QWidget();al=QVBoxLayout(a);al.addWidget(QLabel('Original scene'));self.original=Preview();al.addWidget(self.original,1);split.addWidget(a)
         b=QWidget();bl=QVBoxLayout(b);bl.addWidget(QLabel('Suggested replacement'));self.replacement=Preview();bl.addWidget(self.replacement,1);split.addWidget(b)
-        self.table=QTableWidget(0,6);self.table.setHorizontalHeaderLabels(['Scene','Start','End','Replacement','Score*','Review']);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.itemSelectionChanged.connect(self.selection);l.addWidget(self.table,1)
+        self.table=QTableWidget(0,7);self.table.setHorizontalHeaderLabels(['Scene','Start','End','Person','Replacement','Score*','Review']);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.itemSelectionChanged.connect(self.selection);l.addWidget(self.table,1)
         row=QHBoxLayout();l.addLayout(row);self.candidates=QComboBox();self.candidates.currentIndexChanged.connect(self.candidate_changed);row.addWidget(self.candidates,1)
-        for text,slot in [('Approve',self.approve),('Reject',self.reject),('Manual footage',self.manual),('Trim start',self.trim),('Scene labels',self.scene_labels),('Missing report',self.report),('Render approved plan',self.render),('Open in CapCut',self.open_capcut)]:self.actions.append(button(text,slot,row))
-        weights=QHBoxLayout();l.addLayout(weights);self.weights={}
+        for text,slot in [('Approve',self.approve),('Approve valid clips',self.approve_valid),('Reject',self.reject),('Manual footage',self.manual),('Trim start',self.trim),('Scene labels',self.scene_labels),('Missing report',self.report),('Render approved plan',self.render),('Open in CapCut',self.open_capcut)]:self.actions.append(button(text,slot,row))
+        self.weight_panel=QWidget();weights=QHBoxLayout(self.weight_panel);l.addWidget(self.weight_panel);self.weight_panel.hide();self.advanced.toggled.connect(self.weight_panel.setVisible);self.weights={}
         for name,value in [('identity',4),('activity',2),('visual',2),('framing',1),('duration',1),('aspect',1)]:
             weights.addWidget(QLabel(name.title()));spin=QDoubleSpinBox();spin.setRange(0,10);spin.setValue(value);spin.setSingleStep(.5);weights.addWidget(spin);self.weights[name]=spin
         self.status=QLabel('* Similarity score is a ranking, not a calibrated confidence. Hard cuts and visual histograms are estimates; semantic labels require review.');self.status.setWordWrap(True);l.addWidget(self.status)
@@ -33,6 +36,7 @@ class ReplacementPage(QWidget):
     def busy(self):return self._active or self.task.busy
     def run(self,operation,fn):
         if self.busy:return
+        if self.window._video_job_running() or self.window.batch_page.is_running():return self.error('Wait for the current processing task to finish.')
         self._active=True;self.operation=operation
         for a in self.actions:a.setEnabled(False)
         self.table.setEnabled(False);self.candidates.setEnabled(False)
@@ -49,26 +53,64 @@ class ReplacementPage(QWidget):
         for w in self.weights.values():w.setEnabled(True)
         self.cancel.setEnabled(False)
     def progress(self,args):
+        if args and isinstance(args[0],str):
+            stage,a,b=args;self.status.setText(f'{stage}: {a:.1f} / {b:.1f}');return
         a,b=args[:2];self.status.setText(f'{self.operation}: {a:.1f} / {b:.1f} ({100*a/max(.001,b):.1f}%)')
     def error(self,message):self.status.setText(message);QMessageBox.warning(self,'Replacement Studio',message)
     def open_reference(self):
         p,_=QFileDialog.getOpenFileName(self,'Reference video','','Video (*.mp4 *.mkv *.mov *.avi *.webm *.m4v)')
-        if p:self.run('Analyze reference',lambda t:inspect_video(p,t.stop.is_set,t.report))
+        if p:self.set_reference(p)
+    def set_reference(self,p):
+        from .analysis_library import AnalysisLibrary
+        from .storage import load_settings
+        from .automation import link_people
+        cfg=load_settings();store=self.window.character_store
+        def work(t):
+            ref=inspect_video(p,t.stop.is_set,t.report)
+            cached=AnalysisLibrary().find(p,cfg)
+            if cached:
+                ids={c.id for c in store.characters()} if store else set()
+                for scene in ref['scenes']:link_people(scene,cached[1],ids)
+            return ref
+        self.run('Analyze reference',work)
+    def choose_footage(self):
+        p=QFileDialog.getExistingDirectory(self,'Choose authorized replacement footage')
+        if p:self.footage_folder=p;self.status.setText('Footage selected: '+p+' • Generate timeline will index and analyze it.')
+    def generate_timeline(self):
+        if not self.reference:return self.error('Select a reference video first.')
+        if not self.footage_folder:self.choose_footage()
+        if not self.footage_folder:return
+        from .storage import load_settings
+        from .automation import generate
+        cfg=load_settings()
+        if not cfg.get('custom_models') and not cfg.get('model_license_accepted'):
+            if QMessageBox.question(self,'Face model terms','Default buffalo_l weights are for non-commercial research. Accept for research use, or select separately licensed compatible models in Settings.',QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return
+            from .storage import save_settings
+            save_settings({'model_license_accepted':True});cfg=load_settings()
+        d=QDialog(self);d.setWindowTitle('Generate timeline');form=QFormLayout(d)
+        enabled=QCheckBox('Enforce minimum / maximum clip duration');lc=cfg.get('clip_limits',{});enabled.setChecked(lc.get('enabled',False));form.addRow(enabled)
+        lo=QDoubleSpinBox();hi=QDoubleSpinBox()
+        for field,value in ((lo,lc.get('minimum',2.5)),(hi,lc.get('maximum',4.))):field.setRange(.1,600);field.setDecimals(3);field.setValue(value)
+        form.addRow('Minimum seconds',lo);form.addRow('Maximum seconds',hi)
+        box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);form.addRow(box)
+        if not d.exec():return
+        if enabled.isChecked() and lo.value()>hi.value():return self.error('Minimum cannot exceed maximum.')
+        limits=dict(clip_minimum=lo.value(),clip_maximum=hi.value()) if enabled.isChecked() else {}
+        path=self.reference['path'];folder=self.footage_folder;weights={k:v.value() for k,v in self.weights.items()};store=self.window.character_store
+        if sum(weights.values())<=0:return self.error('Set a positive matching weight.')
+        self.run('Generate timeline',lambda t:generate(path,folder,cfg,store,weights,limits,t.stop.is_set,t.report))
     def index_folder(self):
         p=QFileDialog.getExistingDirectory(self,'Folder of authorized replacement footage')
         if p:self.run('Index footage',lambda t:Index().index(p,t.stop.is_set,t.report))
     def done(self,result):
         if self.operation=='Analyze reference':
             self.reference=result;self.plan=None
-            # Reuse a matching analyzer project's reliable identity labels and intervals.
-            a=self.window.analyzer_page
-            if a.data and a.data.get('source')==result['path']:
-                for scene in result['scenes']:self.link_scene_people(scene,a.data)
+            # Cached analysis is linked in the background before publication.
             self.heading.setText(Path(result['path']).name+f"  •  {len(result['scenes'])} estimated scenes  •  {result['duration']:.2f}s");self.populate();self.show_video(self.original,result['path'],0)
-        elif self.operation in ('Match scenes','Pick clips'):
+        elif self.operation in ('Match scenes','Pick clips','Generate timeline'):
             if self.task.stop.is_set():
                 self.status.setText('Cancelled; previous plan preserved.');return
-            self.plan=result;self.populate()
+            self.plan=result;self.reference=result['reference'];self.populate()
             self.status.setText('Timeline created; approve each clip. '+ ' '.join(result.get('warnings',[])))
         elif self.operation=='Index footage':self.status.setText(f'Index saved: {len(result)} videos. Unchanged videos reuse cached descriptors. Add identity/activity/framing labels before matching.')
         elif self.operation=='CapCut':self.status.setText('Editable draft verified: '+result['folder']+'  •  Open it from CapCut Home → Projects.'+(' CapCut launched.' if result.get('launched') else ' Start CapCut manually.'))
@@ -80,6 +122,7 @@ class ReplacementPage(QWidget):
         confirmed={str(g['library_id']) for g in known}
         unknown={f"unknown:{data['source']}:{g['id']}" for g in groups if g not in known}
         scene['people']=sorted(confirmed|unknown)
+        scene['person_names']=sorted({g['name'] for g in groups})
         if source_footage:
             # A partial appearance does not establish identity for the full source trim.
             covered=set()
@@ -115,7 +158,7 @@ class ReplacementPage(QWidget):
     def populate(self):
         scenes=self.plan['rows'] if self.plan else [{'original':s} for s in (self.reference or {}).get('scenes',[])];self.table.blockSignals(True);self.table.setRowCount(len(scenes))
         for i,row in enumerate(scenes):
-            s=row['original'];sel=row.get('selected');texts=[str(i+1),f"{s['start']:.3f}",f"{s['end']:.3f}",(Path(sel['path']).name+(f" + {len(sel['pieces'])-1} clips / {sel.get('speed',1):.2f}×" if sel.get('pieces') else '')) if sel else 'Missing / manual review',f"{sel['score']:.3f}" if sel and sel.get('score') is not None else 'Manual','Approved' if row.get('approved') else 'Review required']
+            s=row['original'];sel=row.get('selected');texts=[str(i+1),f"{s['start']:.3f}",f"{s['end']:.3f}",', '.join(s.get('person_names') or s.get('people',[])) or 'Not identified',(Path(sel['path']).name+(f" + {len(sel['pieces'])-1} clips / {sel.get('speed',1):.2f}×" if sel.get('pieces') else '')) if sel else 'Missing / manual review',f"{sel['score']:.3f}" if sel and sel.get('score') is not None else 'Manual','Approved' if row.get('approved') else 'Review required']
             for j,text in enumerate(texts):self.table.setItem(i,j,QTableWidgetItem(text))
         self.table.blockSignals(False)
         if scenes:self.table.selectRow(0)
@@ -156,6 +199,18 @@ class ReplacementPage(QWidget):
         try:expand_plan(test)
         except (ValueError,KeyError,TypeError) as e:return self.error(str(e))
         row['approved']=True;row['manual_review']=False;self.update_row()
+    def approve_valid(self):
+        if not self.plan:return self.error('Generate a timeline first.')
+        if QMessageBox.question(self,'Approve valid clips','Approve only automatically matched clips that pass validation? Review the footage visually first.',QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return
+        count=0
+        for row in self.plan['rows']:
+            sel=row.get('selected')
+            if not sel or sel.get('manual') or row.get('approved'):continue
+            candidate=copy.deepcopy(row);duration=candidate['original']['end']-candidate['original']['start'];candidate['original'].update(start=0.,end=duration);candidate.update(approved=True,manual_review=False)
+            try:expand_plan(dict(self.plan,rows=[candidate],reference=dict(self.reference,duration=duration,scenes=[candidate['original']])))
+            except (ValueError,KeyError,TypeError):continue
+            row.update(approved=True,manual_review=False);count+=1
+        self.populate();self.status.setText(f'{count} validated clips approved. Missing and manual clips remain for review.')
     def reject(self):
         row=self.row()
         if row:row['approved']=False;row['selected']=None;row['manual_review']=True;self.update_row()
@@ -194,7 +249,7 @@ class ReplacementPage(QWidget):
         box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);l.addRow(box)
         if d.exec():
             for key,w in fields.items():scene[key]=[s.strip() for s in w.text().split(',') if s.strip()] if key=='people' else w.text().strip()
-            scene['confirmed_people']=list(scene['people'])
+            scene['confirmed_people']=list(scene['people']);scene.pop('person_names',None)
             return True
         return False
     def scene_labels(self):

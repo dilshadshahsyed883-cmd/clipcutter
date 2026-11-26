@@ -33,3 +33,7 @@ Owner instruction recorded on 26 November 2026:
 - Default extraction remains LocalAppData, but the launcher must run from any writable or read-only source location with spaces; all dependencies are installed only in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3\`. Ignore legacy source-local virtual environments; recreate the runtime in AppData from Python, never relocate or delete the legacy environment automatically.
 - AppData stores pip cache, launcher temp files and export cache. Preserve verified upstream model/FFmpeg caches at `%LOCALAPPDATA%\Clipivo` and Studio models, Node, settings, projects and profiles at `%LOCALAPPDATA%\ClipivoV2`; retain existing legacy data read paths without moving/deleting user data. Existing external model files may be reused read-only. User-selected media/export paths remain user-controlled.
 - Source replacement never requires clearing persistent AppData. EXE builds and GitHub Actions build workflows remain prohibited. Keep package documentation snapshots aligned with repository docs.
+
+## Active development version
+
+The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2.3` is immutable. See `docs/PLAN_2_3_1.md`. Preserve original extractor behavior and explicit review; no builds.
