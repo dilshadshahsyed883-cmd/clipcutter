@@ -1,0 +1,3 @@
+Owner requested a fresh candidate build from current main after run 45827958732 passed image smoke but publication was blocked by main SHA drift.
+Reviewed parent: e302aa4178a566b49fca9ed1cf55b32b92703c91
+Run normal exact-SHA candidate build and publication gates. No EXE build, no Salad deployment, no production service changes.
