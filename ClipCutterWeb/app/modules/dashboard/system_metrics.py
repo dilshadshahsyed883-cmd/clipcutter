@@ -47,7 +47,7 @@ def _vps_dashboard_metrics() -> dict[str, Any]:
     except Exception as exc: raise RuntimeError("Load average unavailable") from exc
     os_name="Ubuntu Linux"
     try:
-        m=re.search(r'^PRETTY_NAME="?([^"\\n]+)',Path("/etc/os-release").read_text(encoding="utf-8"),re.M)
+        m=re.search(r'^PRETTY_NAME="?([^"\n]+)',Path("/etc/os-release").read_text(encoding="utf-8"),re.M)
         if m: os_name=m.group(1)
     except Exception: pass
     gb=1024**3

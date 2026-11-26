@@ -9,4 +9,15 @@ python -m compileall -q app run.py tests deploy/init-local-admin.py
 python -m unittest discover -s tests -v
 ```
 
-Guarded manual VPS bootstrap/preflight/stage, private configuration checks, source test runner, rollback and independent Nginx cutover are now provided as source candidates. Local clone attempt failed because github.com DNS is unavailable in the execution container; runtime tests and shell syntax checks have not been executed. Run `bash deploy/test-source.sh` from this folder on an unprivileged test host with repository and PyPI access. Browser parity, live host checks and deployment script execution remain unverified. No EXE builds or GitHub Actions workflows. Do not merge until source tests and review pass.
+## Source verification — 26 November 2026
+
+GitHub connector retrieved the exact PR head `8068092d04fbe7c870f01f783ca3e00ac9f1a1f0` despite the local clone transport failure. Retrieved source files were checked against Git blob hashes; only the intentional metrics fix and regression test differ.
+
+- Linux Python 3.12, unprivileged disposable virtual environment, actual requirements.txt installation.
+- `bash deploy/test-source.sh`: PASS. Bash syntax checks for all four deployment scripts, Python compilation, and 15 unittest cases passed.
+- Original 14 tests also passed before the fix.
+- Fixed OS-name parsing: the previous character class excluded the letter n and truncated Linux names. Added quoted/unquoted os-release regression coverage.
+- Authentication, CSRF, throttling, revocation, persistent sessions, owner isolation, protected pages and metrics failure handling are covered by source tests. Successful metrics API data uses a fixture; tests do not establish actual VPS readings.
+- Expected RuntimeError: probe traceback is the deliberate metrics-unavailable test, which passes.
+
+Guarded manual VPS bootstrap/preflight/stage, private configuration checks, rollback and independent Nginx cutover remain source candidates. Their syntax was checked, but systemd operations, real backups, release rollback, DNS, TLS and live browser parity have not been exercised. Studio tabs remain non-processing placeholders. No VPS mutation, desktop changes, EXE builds or workflows were performed. PR remains draft; main merge and deployment remain pending.

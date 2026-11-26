@@ -2,6 +2,22 @@ from unittest.mock import patch
 import test_admin_security
 
 import unittest
+from app.modules.dashboard.system_metrics import _vps_dashboard_metrics
+
+class HostMetricsTests(unittest.TestCase):
+    def test_os_name_preserves_n_and_stops_at_newline(self):
+        for value in ('PRETTY_NAME="Ubuntu Linux 24.04"\nNAME=Ubuntu\n',
+                      'PRETTY_NAME=Ubuntu Linux 24.04\nNAME=Ubuntu\n'):
+            readings = {
+                "/proc/meminfo": "MemTotal: 2048 kB\nMemAvailable: 1024 kB\n",
+                "/proc/uptime": "12345 0\n",
+                "/etc/os-release": value,
+            }
+            with self.subTest(value=value), patch(
+                "app.modules.dashboard.system_metrics.Path.read_text",
+                autospec=True, side_effect=lambda path, **kw: readings[str(path)]
+            ), patch("app.modules.dashboard.system_metrics._read_cpu_percent", return_value=3):
+                self.assertEqual(_vps_dashboard_metrics()["os"], "Ubuntu Linux 24.04")
 
 class DashboardTests(unittest.TestCase):
     setUp = test_admin_security.LocalAdminSecurityTests.setUp
