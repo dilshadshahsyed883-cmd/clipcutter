@@ -126,6 +126,44 @@ class Dispatcher:
             c.execute("BEGIN IMMEDIATE");self.store.row(c,jid)
             c.execute("UPDATE gpu_attempts SET phase=?,result_sha=COALESCE(?,result_sha),review_json=COALESCE(?,review_json) WHERE job_id=?",
                       (phase,result_sha,canonical(review).decode() if review is not None else None,jid))
+    def command(self,jid):
+        with self.store.connect() as c:
+            row=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(jid,)).fetchone()
+            return row["action"] if row else None
+    def clear_command(self,jid,action):
+        with self.store.connect() as c:
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action=?",(jid,action))
+    def retry_failed(self,jid,row,m):
+        a=row["attempt_id"]
+        remote=self.client.status(a)
+        self._validate(remote,row,m)
+        if remote.get("state")!="failed":raise DispatchError("Retry requires confirmed remote failure")
+        # Never overwrite partial delivery or published output.
+        for folder in ("outputs","delivery-parts"):
+            p=self.store.root/folder/jid
+            if p.exists() and any(p.iterdir()):raise DispatchError("Existing output requires manual reconciliation")
+        root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
+        for name,item in m["files"].items():
+            filename=mapping[name]
+            if not NAME.fullmatch(filename):raise DispatchError("Unsafe staged input")
+            p=root/filename
+            if p.resolve()!=p or not p.is_file() or p.stat().st_size!=item["size"] or sha_file(p)!=item["sha256"]:
+                raise DispatchError("Verified inputs changed; retry held")
+        ack=self.client.purge(a,"discard-failed")
+        self._validate(ack,row,m)
+        if ack.get("state")!="failed" or ack.get("purged") is not True:
+            raise DispatchError("Failed attempt cleanup unconfirmed")
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            current=self.store.row(c,jid)
+            if current["state"]!="failed":raise DispatchError("Retry state changed")
+            c.execute("INSERT OR IGNORE INTO gpu_attempt_history VALUES (?,?,?,?)",(a,jid,"failed",int(time.time())))
+            changed=c.execute("UPDATE gpu_attempts SET attempt_id=?,phase='new',result_sha=NULL WHERE job_id=? AND attempt_id=? AND phase='failed'",(uuid4().hex,jid,a)).rowcount
+            if changed!=1:raise DispatchError("Retry attempt changed")
+            c.execute("UPDATE requests SET state='ready',progress=100,message='Verified inputs retained; GPU retry queued',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.store.owner))
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='retry'",(jid,))
+        return "retry_queued"
+
     def _pending(self,c):
         return c.execute("SELECT count(*) FROM requests WHERE owner=? AND state IN ('awaiting_input','staging')",(self.store.owner,)).fetchone()[0]
     def prepare(self,jid,*,allow_during_intake=False):
@@ -181,9 +219,17 @@ class Dispatcher:
                 self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
-            if row["phase"] in ("review_ready","acknowledged","failed","cancelled"):return row["phase"]
-            caps=self.client.capabilities()
+            command=self.command(jid)
             a=row["attempt_id"];m=json.loads(row["manifest"])
+            if row["phase"]=="new" and command=="cancel":
+                self.store.transition(jid,"ready","cancelled","Cancelled before GPU dispatch")
+                self._phase(jid,"cancelled_clean");self.clear_command(jid,"cancel")
+                return "cancelled_clean"
+            if row["phase"]=="failed" and command=="retry":
+                self.client.capabilities()
+                return self.retry_failed(jid,row,m)
+            if row["phase"] in ("review_ready","acknowledged","failed","cancelled","cancelled_clean") and not command:return row["phase"]
+            caps=self.client.capabilities()
             if row["phase"]=="new":
                 if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
@@ -197,6 +243,11 @@ class Dispatcher:
             else:remote=self.client.status(a)
             self._validate(remote,row,m)
             state=remote["state"];local=self.store.get(jid)["state"]
+            if command=="cancel" and state in ("staging","queued","running"):
+                remote=self.client.cancel(a);self._validate(remote,row,m)
+                state=remote["state"]
+            if command=="cancel" and state=="completed":
+                self.clear_command(jid,"cancel") # completion wins; preserve output
             if state=="staging":
                 if row["phase"] in ("start_intent","processing","delivering","published"):
                     raise DispatchError("Remote reverted to staging; reconcile")
@@ -250,7 +301,15 @@ class Dispatcher:
                 if local in ("ready","processing","delivering"):
                     target="cancelled" if state=="cancelled" and local!="delivering" else "failed"
                     self.store.transition(jid,local,target,"GPU: "+str(remote.get("error") or state)[:500])
-                self._phase(jid,state);return state
+                self._phase(jid,state)
+                if command=="cancel":
+                    ack=self.client.purge(a,"discard-failed")
+                    self._validate(ack,row,m)
+                    if ack.get("state")!=state or ack.get("purged") is not True:
+                        raise DispatchError("Cancelled attempt cleanup unconfirmed")
+                    if state=="cancelled":self._phase(jid,"cancelled_clean")
+                    self.clear_command(jid,"cancel")
+                return state
             if state=="completed":
                 if observe_only:
                     self._phase(jid,"output_ready");return "output_ready"
