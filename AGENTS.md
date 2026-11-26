@@ -21,7 +21,7 @@ Owner instruction recorded on 26 November 2026:
 
 ## Windows source ZIP location rule
 
-- Store PC-testing source ZIPs under `%LOCALAPPDATA%\ClipivoV2\packages\`, never in Downloads by default.
+- Store the final PC-testing source ZIP in the Windows Downloads folder by default.
 - Extract the runnable source app under `%LOCALAPPDATA%\ClipivoV2\app\Clipivo_V2\`, never into Downloads by default.
 - Preserve the archive name `Clipivo_V2_3_Windows.zip`, its single outer `Clipivo_V2` folder, `START_V2.bat` and `_internal` structure.
 - Keep the Python runtime under `%LOCALAPPDATA%\ClipivoV2\runtime\`; do not bundle it in the ZIP.
@@ -38,8 +38,6 @@ Owner instruction recorded on 26 November 2026:
 
 The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2.3` is immutable. See `docs/PLAN_2_3_1.md`. Preserve original extractor behavior and explicit review; no builds.
 
-
-
 ## Mandatory delivery clarification — 26 November 2026
 
-The owner observed `Clipivo_V2_3_Windows.zip` in Windows Downloads and explicitly rejected that destination. **Never deliver future PC-testing ZIPs via a browser ZIP download link or instructions that first save the ZIP to Downloads.** Supply a PowerShell command or setup script that creates/downloads the ZIP directly at `%LOCALAPPDATA%\ClipivoV2\packages\Clipivo_V2_3_Windows.zip`, and extracts the active application under `%LOCALAPPDATA%\ClipivoV2\app\Clipivo_V2\`. Temporary download/extraction files must also remain under the AppData setup area. A setup script itself may be downloaded separately; the ZIP must not be. Use explicit absolute AppData paths for all archive operations; verify destination and archive structure before launching. Do not silently fall back to Downloads or overwrite/delete the user's existing Downloads copy. This rule applies to every future source testing release, including 2.3.1 and successors. No EXE build or GitHub Actions workflow is authorized.
+The owner's latest instruction supersedes the earlier ZIP destination rule: **the final PC-testing source ZIP must be saved in the Windows Downloads folder**, as `Clipivo_V2_3_Windows.zip`. A direct browser download or a PowerShell command targeting the user's Downloads known folder is acceptable. The extracted application, Python runtime, dependencies, models, settings and temporary setup files remain in LocalAppData. Verify ZIP structure before delivery; preserve existing user data and archived releases. No EXE build or GitHub Actions workflow is authorized.
