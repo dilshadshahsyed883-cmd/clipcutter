@@ -159,3 +159,27 @@ def test_cancel_selection_and_match():
         build_picked_plan(ref, sources, 2, 4, cancel=lambda:True)
     with pytest.raises(InterruptedError):
         build_plan(ref, sources, cancel=lambda:True)
+
+
+def test_capcut_request_from_reviewed_replacement_and_picker(real_media):
+    from studio.capcut import request_from_plan
+    ref,sources=real_media
+    plan=approve(build_plan(ref,sources))
+    pieces=expand_plan(plan)['rows']
+    request=request_from_plan(plan,audio='original')['payload']
+    assert len(request['images'])==len(pieces)==2
+    assert request['images'][0]['start']==0
+    assert request['images'][-1]['end']==4
+    for image,row in zip(request['images'],pieces):
+        assert image['image']==row['selected']['path']
+        assert image['speed']==row['selected']['speed']
+        assert image['trimStart']==pytest.approx(row['selected']['trim_start'],abs=1e-6)
+        assert image['muted'] is True
+    assert request['voice']['dur']==4
+    assert request_from_plan(plan,audio='none')['payload']['voice'] is None
+    assert request_from_plan(plan,audio='external',audio_file=ref['path'])['payload']['voice']['file']==ref['path']
+    picked=approve(build_picked_plan(ref,sources,1,2,seed=42,allow_repeats=True))
+    payload=request_from_plan(picked,audio='none')['payload']
+    assert len(payload['images'])==len(picked['rows'])
+    assert payload['images'][-1]['end']==4
+    assert all(1<=c['end']-c['start']<=2 for c in payload['images'])
