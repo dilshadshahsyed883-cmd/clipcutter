@@ -44,7 +44,7 @@ class QueueWebTests(unittest.TestCase):
     _signed_in=StudioWebTests._signed_in
     _post=StudioWebTests._post
     def test_owner_queue_controls(self):
-        self.assertEqual(self.client.post(API+"/queue/pause").status_code,401)
+        self.assertEqual(self.client.post(API+"/queue/pause").status_code,403)
         csrf=self._signed_in()
         self.assertEqual(self._post(API+"/queue/pause","invalid",{}).status_code,403)
         self.assertTrue(self._post(API+"/queue/pause",csrf,{}).json()["paused"])
