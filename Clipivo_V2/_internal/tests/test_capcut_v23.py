@@ -45,13 +45,13 @@ class CapCutV23Tests(unittest.TestCase):
 
     def plan(self):
         first=dict(path=str(self.video),start=.25,end=3,trim_start=.5,
-                   target_duration=1.123456,speed=.8)
+                   target_duration=1.123456,speed=.8,confirmed_people=['person'])
         second=dict(path=str(self.other),start=.1,end=3,trim_start=.25,
-                    target_duration=.876544,speed=1.25)
+                    target_duration=.876544,speed=1.25,confirmed_people=['person'])
         selected=dict(first,pieces=[first,second],gap_fill=True)
         return dict(version=1,reference=dict(path=str(self.video),duration=2,
-            width=1280,height=720,fps=30),rows=[
-            dict(original=dict(start=0,end=2,people=['person']),selected=selected,approved=True)])
+            width=1280,height=720,fps=30,scenes=[dict(start=0,end=2,people=['person'],confirmed_people=['person'])]),rows=[
+            dict(original=dict(start=0,end=2,people=['person']),selected=selected,approved=True,manual_review=False,identity_required=['person'])])
 
     def run_export(self,mode='original',audio_file=None):
         return export_plan(self.plan(),str(self.drafts),'Reviewed timeline',mode,audio_file,False)
@@ -116,6 +116,15 @@ class CapCutV23Tests(unittest.TestCase):
         self.probes[str(self.external)]['duration']=1
         with self.assertRaisesRegex(ValueError,'shorter'):
             request_from_plan(self.plan(),audio='external',audio_file=self.external)
+        self.assertEqual(list(self.drafts.iterdir()),[])
+
+    def test_reject_unconfirmed_identity_and_pending_review(self):
+        p=self.plan();p['rows'][0]['selected']['pieces'][0]['confirmed_people']=[]
+        with self.assertRaisesRegex(ValueError,'identity is unconfirmed'):
+            request_from_plan(p,audio='none')
+        p=self.plan();p['rows'][0]['manual_review']=True
+        with self.assertRaisesRegex(ValueError,'Approve'):
+            request_from_plan(p,audio='none')
         self.assertEqual(list(self.drafts.iterdir()),[])
 
     def test_nested_corruption_detected(self):
