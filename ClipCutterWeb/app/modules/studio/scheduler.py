@@ -111,14 +111,20 @@ class Scheduler:
                 try:
                     result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"))
                     self.control.mark(result)
-                except DispatchError:self.control.mark("worker_reconcile_required")
+                    return result
+                except DispatchError as exc:
+                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
                 return
             if paused or action=="stop" or state!="ready":return
             if any(x["state"] in ("awaiting_input","staging") for x in rows):return
             next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
             if next_job:
-                try:self.control.mark(self.dispatch.tick(next_job["id"]))
-                except DispatchError:self.control.mark("worker_reconcile_required")
+                try:
+                    result=self.dispatch.tick(next_job["id"])
+                    self.control.mark(result)
+                    return result
+                except DispatchError as exc:
+                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
 
 def main():
     owner=os.environ.get("CLIPCUTTER_APPROVED_OWNER","")
@@ -137,10 +143,12 @@ def main():
                 # Restart required for config/credential changes; no silent retargeting.
                 if gpu.snapshot()!=(cfg,key,token):
                     scheduler.control.mark("configuration_changed_restart_required");break
-                try:scheduler.tick()
+                result=None
+                try:result=scheduler.tick()
                 except Exception:
                     scheduler.control.mark("scheduler_error_reconcile")
-                time.sleep(3)
+                # Release admission lock and recheck pause/config between acknowledged chunks.
+                time.sleep(0.05 if result in ("staging","delivering") else 3)
         finally:
             with store.connect() as c:
                 c.execute("UPDATE scheduler_control SET heartbeat=0 WHERE id=1")
