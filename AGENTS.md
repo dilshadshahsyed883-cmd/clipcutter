@@ -41,3 +41,7 @@ The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2
 ## Mandatory delivery clarification — 26 November 2026
 
 The owner's latest instruction supersedes the earlier ZIP destination rule: **the final PC-testing source ZIP must be saved in the Windows Downloads folder**, as `Clipivo_V2_3_Windows.zip`. A direct browser download or a PowerShell command targeting the user's Downloads known folder is acceptable. The extracted application also belongs in Downloads as `Clipivo_V2/`. Python runtime, dependencies, models, settings and temporary setup files remain in LocalAppData. Verify ZIP structure before delivery; preserve existing user data and archived releases. No EXE build or EXE build workflow is authorized.
+
+## Owner-approved GPU build hold (latest instruction)
+
+No GPU Docker build or trigger until owner explicitly approves finalization. No GPU-path PR/merge while automated build triggers remain enabled; stage changes on a separate branch without PR. Follow docs/GPU_FINAL_IMAGE_CONTRACT.md. This hold supersedes general permission to build GPU candidates, without changing the permanent no-EXE rule.
