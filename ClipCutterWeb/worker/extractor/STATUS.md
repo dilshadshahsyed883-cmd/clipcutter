@@ -1,3 +1,10 @@
 # Step 4 checkpoint
 
-Original scan/export core ported into a headless worker with scan/review/export contract. Authenticated web settings validation and browser-local preview are now provided. No media transfer or server job admission. No real runtime tests executed yet; GitHub DNS not available in local container, PyAV and ONNX Runtime not installed locally. Run existing web source tests plus worker tests in a separate worker environment. Validate actual synthetic and authorized reference video with FFmpeg and licensed models before approving parity. No GPU image or deploy in this step.
+Headless original scan, face matching, framing and FFmpeg export core adapted into an independent worker. Separate scan and reviewed export commands, input/output digest checks, optional strict duration limits, local browser preview and authenticated web options validation. No dispatch, file intake or production processing yet.
+
+## Verification
+
+- Exact GitHub blob 47140bf341d369deadd5172b4944b7e59bfbafd4 (limits.py) reproduced locally, git hash-object matched. 4,732 partition cases passed across seven min/max combinations; all bounds and maximal retained duration verified.
+- Exact GitHub blob d5c9d7f3b15fb5d52532403dd82c6104b3cde68d (contracts.py) reproduced locally, git hash-object matched. Twelve validation cases passed (valid requests, invalid ranges, invalid limits and extra/nonfinite fields).
+- Full web regression suite, FFmpeg export integration, model-based scan, browser review and GPU not run. Local DNS cannot resolve github.com; PyAV and ONNX Runtime absent. Tests added in tests/test_extractor_contracts.py and opt-in worker smoke test.
+- Source review only: deployment/GPU, existing desktop and Concat remain unchanged. Do not merge until source regressions and worker acceptance pass. Runtime acceptance must use authorized reference media and licensed weights.

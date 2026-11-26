@@ -125,10 +125,19 @@ def run(root: Path, action: str, cancel: Event):
         progress=lambda d,t,m:event("export",d,t,m),cancel_event=cancel,source_fps=info.fps,
         source_video_bitrate_kbps=info.video_bitrate_kbps,shape=shape,clip_limits=limits,
         video_encoder="cpu",output_name="clip")
+    expected = []
+    if opts.framing == 'whole' and opts.mode == 'accurate':
+        if limits:
+            from .vendor.limits import bounded_parts
+            expected = [round((b-a)*1000) for clip in ranges for a,b in bounded_parts(clip.duration_ms/1000,*limits)]
+        else:
+            expected = [clip.duration_ms for clip in ranges]
+        if opts.stitched: expected = [sum(expected)]
+        if len(paths) != len(expected): raise RuntimeError('Output count differs from reviewed plan')
     artifacts=[]
-    for path in paths:
+    for index,path in enumerate(paths):
         if cancel.is_set(): raise InterruptedError("Cancelled")
-        validate_export(path)
+        validate_export(path,expected_duration_ms=expected[index] if expected else 0)
         actual=probe_video(path,include_keyframes=False).duration_ms
         if limits and not opts.minimum_ms<=actual<=opts.maximum_ms:
             raise RuntimeError("Verified output does not meet strict duration limits")
