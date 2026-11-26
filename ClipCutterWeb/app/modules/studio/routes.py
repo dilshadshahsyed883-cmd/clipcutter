@@ -40,6 +40,11 @@ def detail(job:str,s:Store=Depends(store)): return s.get(job)
 @router.post("/requests/{job}/cancel",dependencies=[Depends(require_csrf)])
 def cancel(job:str,s:Store=Depends(store)): return s.cancel(job)
 
+@router.get("/requests/{job}/batch")
+def batch(job:str,s:Store=Depends(store)):
+    from .batch import members
+    return {"requests":members(s,job)}
+
 @router.get("/requests/{job}/review")
 def review(job:str,s:Store=Depends(store)): return get_review(s,job)
 

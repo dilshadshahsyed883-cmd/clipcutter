@@ -10,6 +10,7 @@ import shutil
 import socket
 import time
 import zipfile
+import zlib
 from fastapi import HTTPException
 from .store import safe_dir
 
@@ -191,7 +192,7 @@ def stage(store, jid, bridge=None):
                 part.rename(tmp/name)
                 total+=meta["size"]
                 manifest.append({"role":role,"drive_id":row["id"],"file":name,
-                                 "size":meta["size"],"sha256":meta["sha256"],"md5":meta["md5"]})
+                                 "size":meta["size"],"sha256":meta["sha256"],"md5":meta["md5"],"original_name":meta["name"]})
                 store.intake_progress(jid, min(99,round(index/len(plan)*100,1)),
                                       f"Verified {index}/{len(plan)} input files")
             with (tmp/"manifest.json").open("x") as f:
@@ -201,9 +202,14 @@ def stage(store, jid, bridge=None):
             fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY)
             try: os.fsync(fd)
             finally: os.close(fd)
-            store.transition(jid,"staging","ready","Drive inputs verified; GPU dispatch not connected",100)
-        except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException) as exc:
+            if job["input"]["source_kind"] in ("folder","zip"):
+                from .batch import expand
+                expand(store,jid,final,manifest)
+            else:
+                store.transition(jid,"staging","ready","Drive inputs verified",100)
+        except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException,NotImplementedError,EOFError,zlib.error) as exc:
             if tmp.exists():
                 shutil.rmtree(tmp)
             detail=str(exc) if type(exc) in (RuntimeError,Retryable) else "Input verification or storage operation failed"
-            store.transition(jid,"staging","failed","Drive intake: "+detail[:300])
+            if store.get(jid)["state"]=="staging":
+                store.transition(jid,"staging","failed","Drive intake: "+detail[:300])
