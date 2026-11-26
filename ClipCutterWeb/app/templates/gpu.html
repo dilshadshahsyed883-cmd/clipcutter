@@ -1,12 +1,11 @@
-<link rel="stylesheet" href="/static/studio.css?v=20261126-margin-parity-1">
+<link rel="stylesheet" href="/static/studio.css?v=20261126-subtabs-1">
 <div id="studio" data-kind="gpu">
   <section class="content-card studio-card">
-    <h2>GPU Config</h2>
-    <p class="studio-note" id="gpu-capability" role="status">Loading configuration…</p>
+    <div class="studio-heading"><h2>GPU Config</h2><span class="studio-status-chip" id="gpu-capability" role="status">Loading…</span></div><div class="studio-status-chip" id="intake-capability" role="status">Checking intake…</div>
     <form id="gpu-form">
       <fieldset id="gpu-fields" disabled style="border:0;padding:0;margin:0;min-width:0">
         <h3>Salad Connection Setup</h3>
-        <p class="studio-note">Use a separate dedicated ClipCutter group with one replica and Salad autostart OFF. Never use the Concat group.</p>
+
         <div class="studio-grid">
           <label>Organization slug<input name="salad_organization" pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" maxlength="63"></label>
           <label>Project slug<input name="salad_project" pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" maxlength="63"></label>
@@ -26,8 +25,7 @@
           <label>Inter-attempt cooldown (seconds)<input name="salad_reallocate_cooldown" type="number" min="5" max="600" step="1" required></label>
           <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2">2 (requires resource acceptance)</option></select></label>
         </div>
-        <p id="gpu-rule" class="studio-note" aria-live="polite"></p>
-        <p class="studio-note">Automatic shutdown: 60 seconds after the queue and verified deliveries finish. Execution is gated until finalization and runtime acceptance.</p>
+        <details class="studio-advanced"><summary>Automation rules</summary><p id="gpu-rule" class="studio-note" aria-live="polite"></p><p class="studio-note">Auto-stop: 60 seconds after queue and verified deliveries finish.</p></details>
         <div class="studio-actions"><button type="submit" id="gpu-save">Save Automation Settings</button><span id="gpu-save-status" role="status"></span></div>
       </fieldset>
     </form>
@@ -37,7 +35,7 @@
     <p id="gpu-status" role="status" class="studio-note">Status not checked.</p>
     <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Instance</th><th>State</th><th>Image pull</th><th>Salad ready</th><th>Updated</th></tr></thead><tbody id="gpu-instances"></tbody></table></div>
     <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button></div>
-    <p class="studio-note">Actions require an approved online scheduler. Retry rechecks unresolved actions without repeating ambiguous mutations.</p>
+
   </section>
 </div>
-<script defer src="/static/gpu.js?v=20261126-gpu-scheduler-1"></script>
+<script defer src="/static/gpu.js?v=20261126-subtabs-1"></script>

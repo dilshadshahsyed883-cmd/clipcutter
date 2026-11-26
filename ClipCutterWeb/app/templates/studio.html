@@ -1,15 +1,19 @@
-<link rel="stylesheet" href="/static/studio.css?v=20261126-margin-parity-1">
+<link rel="stylesheet" href="/static/studio.css?v=20261126-subtabs-1">
 <div id="studio" data-kind="{{ page.key }}">
-<section class="content-card studio-card">
-<h2>{{ page.title }}</h2>
-<p class="lead">Submit input and processing settings. All video processing will run on the separate GPU worker, not this server.</p>
-<p class="studio-note" role="status" id="studio-capabilities">Checking connection…</p>
+<nav class="studio-subtabs" aria-label="{{ page.title }} sections">
+<button type="button" data-view="new" aria-pressed="true" aria-controls="studio-new">{{ 'New Request' if page.key == 'extractor' else 'New Analysis' }}</button>
+<button type="button" data-view="queue" aria-pressed="false" aria-controls="studio-queue">Queue</button>
+<button type="button" data-view="results" aria-pressed="false" aria-controls="studio-results">{{ 'Outputs' if page.key == 'extractor' else 'Results' }}</button>
+</nav>
+<p id="studio-status" role="status" aria-live="polite" class="studio-feedback"></p>
+<section class="content-card studio-card" id="studio-new" data-panel="new">
+<h2>{{ 'New Request' if page.key == 'extractor' else 'New Analysis' }}</h2>
 <form id="studio-form">
 <div class="studio-grid">
 <label>Source link (Drive / YouTube) <input name="source" type="url" required maxlength="2048" placeholder="https://drive.google.com/…" autocomplete="off"></label>
 
 <label>Output Drive folder (optional) <input name="output_folder" type="url" maxlength="2048" autocomplete="off"></label>
-<div><label>Reference images {% if page.key == 'analyzer' %}(optional){% endif %}<select name="reference_mode"><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label><label id="reference-drive" hidden>Drive file/folder <input name="reference_link" type="url" maxlength="2048" autocomplete="off" disabled></label><div id="reference-upload"><label>Choose images <input id="reference-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp"></label><small>JPG, PNG, WEBP · Up to 12 images, 3 MiB total</small><div id="reference-preview" aria-live="polite"></div></div></div>
+{% if page.key == 'extractor' %}<div><label>Reference images<select name="reference_mode"><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label><label id="reference-drive" hidden>Drive file/folder <input name="reference_link" type="url" maxlength="2048" autocomplete="off" disabled></label><div id="reference-upload"><label>Choose images <input id="reference-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp"></label><small>JPG, PNG, WEBP · Up to 12 images, 3 MiB total</small><div id="reference-preview" aria-live="polite"></div></div></div>{% endif %}
 </div>
 {% if page.key == 'extractor' %}
 <h3>Extraction settings</h3>
@@ -29,31 +33,30 @@
 </div>
 <div id="manual-ranges" hidden><h3>Manual clip ranges (seconds)</h3><div id="range-list"></div><button type="button" id="add-range" class="studio-secondary">Add range</button></div>
 {% else %}
-<h3>Person Analyzer settings</h3>
+<details class="studio-advanced"><summary>Advanced settings</summary>
 <div class="studio-grid">
 <label>Sample interval (ms) <input name="sample_interval_ms" type="number" min="250" max="10000" value="1000" required></label>
 <label>Similarity threshold <input name="similarity_threshold" type="number" min="0" max="1" step=".01" value=".50" required></label>
 <label class="studio-check"><input name="ignore_background_faces" type="checkbox" checked> Ignore background faces</label>
 <label class="studio-check"><input name="ignore_static_faces" type="checkbox" checked> Ignore static faces / logos</label>
 </div>
-<h3>Ignore regions (normalized 0–1, x / y / width / height)</h3><div id="region-list"></div><button type="button" id="add-region" class="studio-secondary">Add region</button>
+<h3>Ignore regions (normalized 0–1, x / y / width / height)</h3><div id="region-list"></div><button type="button" id="add-region" class="studio-secondary">Add region</button></details>
 {% endif %}
-<p class="studio-note">Source type is detected automatically. Drive links must be accessible to the configured Drive account. YouTube supports authorized single videos only, without audio. Save a request, then select Download input in the queue. No GPU job will start.</p>
-<div class="studio-actions"><button type="submit" id="save-request">Save request</button><span id="studio-status" role="status" aria-live="polite"></span></div>
+<div class="studio-actions"><button type="submit" id="save-request">{{ "Save Request" if page.key == "extractor" else "Save Analysis" }}</button></div>
 </form>
 </section>
-<section class="content-card studio-card">
+<section class="content-card studio-card" id="studio-queue" data-panel="queue" hidden>
 <div class="studio-heading"><h2>Request queue</h2><button id="refresh-requests" class="studio-secondary" type="button">Refresh</button></div>
-<p class="studio-note">Only recorded requests and actual backend states are shown. No simulated progress.</p>
+
 <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
 </section>
-<section class="content-card studio-card" id="batch-panel" hidden><h2>Batch videos</h2><div id="batch-members"></div></section>
-<section class="content-card studio-card" id="review-panel" hidden>
+<section class="content-card studio-card" id="batch-panel" data-panel="queue" data-extra hidden><h2>Batch videos</h2><div id="batch-members"></div></section>
+<section class="content-card studio-card" id="review-panel" data-panel="results" data-extra hidden>
 <h2>Review scan ranges</h2><p id="review-status" role="status"></p><div id="review-ranges"></div>
 <div class="studio-actions"><button type="button" id="review-add" class="studio-secondary">Add range</button><button type="button" id="review-approve" disabled>Approve export</button></div>
 </section>
-<section class="content-card studio-card">
-<h2>Verified outputs</h2><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
+<section class="content-card studio-card" id="studio-results" data-panel="results" hidden>
+<h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2><label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-direct-reference-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-subtabs-1"></script>

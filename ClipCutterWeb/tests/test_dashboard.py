@@ -41,5 +41,5 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(page.status_code, 200)
             self.assertIn("Clip Extractor", page.text)
             self.assertIn("Person Analyzer", page.text)
-            self.assertIn("Save request", page.text)
+            self.assertIn("Save Request" if path.endswith("/extractor") else "Save Analysis", page.text)
         self.assertEqual(self.client.get("/concat/production").status_code, 404)
