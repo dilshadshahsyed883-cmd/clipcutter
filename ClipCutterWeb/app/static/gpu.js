@@ -75,7 +75,7 @@
     if(!$("gpu-instances").children.length)$("gpu-status").textContent="Checking SaladCloud…";
     try{
       const result=await api("/status");
-      $("gpu-status").textContent="Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Dedicated group settings not verified");
+      $("gpu-status").textContent="Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Blocked: "+(result.group_blocker||"group settings not verified"));
       $("gpu-instances").replaceChildren();
       for(const item of result.instances){const tr=document.createElement("tr");
         for(const val of [item.id,item.state,item.pulling_progress===null?null:item.pulling_progress+"%",item.ready,item.update_time]){const td=document.createElement("td");td.textContent=String(val??"Unknown");tr.append(td);}

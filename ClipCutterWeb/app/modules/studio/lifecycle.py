@@ -11,7 +11,7 @@ import re
 import time
 from uuid import UUID
 import httpx
-from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent
+from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent, group_blocker, scheduled_scaling_disabled
 from .store import safe_dir
 from .eligibility import blocker
 
@@ -47,12 +47,6 @@ def identity(i):
     version=i.get("version")
     if version is None:raise ValueError("Missing instance version")
     return "/".join((str(UUID(i["id"])),str(UUID(i["machine_id"])),str(version)))
-
-def scheduled_scaling_disabled(group):
-    """Salad uses a hyphenated JSON field; accept an explicit legacy false too."""
-    keys=("scheduled-scaling-enabled","scheduled_scaling_enabled")
-    reported=[group[key] for key in keys if key in group]
-    return bool(reported) and all(value is False for value in reported)
 
 def zero_metrics(caps):
     return all(type(caps.get(k)) is int and caps[k]==0 for k in ("active_renders","staging","undelivered"))
@@ -115,10 +109,8 @@ class Lifecycle:
         work=self._work()
         try:
             group=self.api.group()
-            if (type(group.get("replicas")) is not int or group["replicas"]!=1 or
-                group.get("autostart_policy") is not False or not scheduled_scaling_disabled(group) or
-                group.get("container",{}).get("image")!=self.api.image):
-                return done("dedicated_group_or_image_mismatch")
+            reason=group_blocker(group,self.api.image)
+            if reason:return done(reason)
             state=group.get("current_state",{}).get("status")
             if group.get("pending_change"):return done("group_change_pending")
             if state=="stopped":
@@ -162,7 +154,7 @@ class Lifecycle:
                     if not zero_metrics(self.worker.capabilities()):return done("worker_busy")
                     r["stop_intent"]=True;self.idle_since=None
                     return self._post(r,"stop")
-                if paused or work["intake"]:return done("ready_dispatch_blocked")
+                if paused:return done("ready_dispatch_blocked")
                 return done("ready")
             if stage!="downloading":
                 r.update(download_transition=None,accepted=False,progress=None)

@@ -20,6 +20,12 @@ def authorized(store,cfg=None):
         cfg.salad_container_group=="clipcutter-gpu" and cfg.parallel==1 and
         cfg.worker_gateway==os.environ.get("CLIPCUTTER_APPROVED_WORKER_GATEWAY"))))
 
+POLICY_FIELDS={"auto_start","image_pull_threshold","image_pull_seconds",
+               "salad_max_reallocations","salad_reallocate_cooldown"}
+
+def policy_only_change(old,new):
+    return old.model_dump(exclude=POLICY_FIELDS)==new.model_dump(exclude=POLICY_FIELDS)
+
 class Control:
     def __init__(self,store):
         self.store=store
@@ -109,16 +115,30 @@ class Scheduler:
             current=next((x for x in rows if x["phase"] in ("create_intent","staging","start_intent","processing","delivering","published","scan_receipt","review")),None)
             if current:
                 try:
-                    result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"))
+                    result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"),allow_during_intake=state in ("ready","worker_busy"))
                     self.control.mark(result)
-                except DispatchError:self.control.mark("worker_reconcile_required")
+                    return result
+                except DispatchError as exc:
+                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
                 return
-            if paused or action=="stop" or state!="ready":return
-            if any(x["state"] in ("awaiting_input","staging") for x in rows):return
+            if paused or action=="stop" or state!="ready":
+                # Expose the live readiness reason on each otherwise eligible request.
+                reason="queue_paused" if paused else "manual_stop_pending" if action=="stop" else state
+                for row in rows:
+                    if row["state"]=="ready" and row["phase"] in (None,"new") and self.eligible(row):
+                        message="Waiting for GPU: "+reason
+                        with self.store.connect() as c:
+                            c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",
+                                      (message,int(time.time()),row["id"],self.store.owner,message))
+                return
             next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
             if next_job:
-                try:self.control.mark(self.dispatch.tick(next_job["id"]))
-                except DispatchError:self.control.mark("worker_reconcile_required")
+                try:
+                    result=self.dispatch.tick(next_job["id"],allow_during_intake=True)
+                    self.control.mark(result)
+                    return result
+                except DispatchError as exc:
+                    self.control.mark("worker_reconcile_required: "+str(exc)[:250])
 
 def main():
     owner=os.environ.get("CLIPCUTTER_APPROVED_OWNER","")
@@ -134,13 +154,23 @@ def main():
         scheduler=Scheduler(store,api,worker,cfg)
         try:
             while True:
-                # Restart required for config/credential changes; no silent retargeting.
-                if gpu.snapshot()!=(cfg,key,token):
-                    scheduler.control.mark("configuration_changed_restart_required");break
-                try:scheduler.tick()
+                # Reload only automation policy, never credentials or destination.
+                updated,new_key,new_token=gpu.snapshot()
+                if (updated,new_key,new_token)!=(cfg,key,token):
+                    if (new_key,new_token)!=(key,token) or not policy_only_change(cfg,updated) or not authorized(store,updated):
+                        scheduler.control.mark("configuration_changed_restart_required");break
+                    # Complete pending manual start/stop under its original mode.
+                    if not scheduler.control.snapshot()["action"]:
+                        cfg=updated
+                        scheduler.cfg=cfg
+                        scheduler.lifecycle.cfg=cfg
+                        scheduler.lifecycle.idle_since=None
+                result=None
+                try:result=scheduler.tick()
                 except Exception:
                     scheduler.control.mark("scheduler_error_reconcile")
-                time.sleep(3)
+                # Release admission lock and recheck pause/config between acknowledged chunks.
+                time.sleep(0.05 if result in ("staging","delivering") else 3)
         finally:
             with store.connect() as c:
                 c.execute("UPDATE scheduler_control SET heartbeat=0 WHERE id=1")

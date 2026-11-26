@@ -198,6 +198,18 @@ class Store:
             c.execute("UPDATE requests SET progress=?,message=?,updated_at=? WHERE id=? AND owner=?",
                       (progress,message,int(time.time()),jid,self.owner))
 
+    def gpu_stage_progress(self,jid,state,progress,message):
+        """Update only the existing GPU processing/delivery state."""
+        if state not in ("processing","delivering") or (progress is not None and
+            (type(progress) is not int or not 0<=progress<=100)):
+            raise ValueError("Invalid GPU stage progress")
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            if self.row(c,jid)["state"]!=state:
+                raise HTTPException(409,"Stale GPU stage")
+            c.execute("UPDATE requests SET progress=?,message=?,updated_at=? WHERE id=? AND owner=?",
+                      (progress,message[:500],int(time.time()),jid,self.owner))
+
     def intake_progress(self,jid,progress,message):
         with self.connect() as c:
             c.execute("BEGIN IMMEDIATE")

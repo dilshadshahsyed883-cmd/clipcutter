@@ -68,6 +68,29 @@ def image_pull_percent(value):
         return None
     return round(value * 100, 10) if value <= 1 else value
 
+def scheduled_scaling_disabled(group):
+    """Safe when explicitly off or enabled with an explicitly empty schedule."""
+    flags=[group[k] for k in ("scheduled-scaling-enabled","scheduled_scaling_enabled") if k in group]
+    actions=[group[k] for k in ("scaling-actions","scaling_actions") if k in group]
+    if not flags or any(type(v) is not bool for v in flags) or len(set(flags))!=1:
+        return False
+    if any(not isinstance(v,list) for v in actions):
+        return False
+    if not flags[0]:
+        return True
+    return bool(actions) and all(v==[] for v in actions)
+
+def group_blocker(group, approved_image=None):
+    if type(group.get("replicas")) is not int or group["replicas"]!=1:
+        return "requires_one_replica"
+    if group.get("autostart_policy") is not False:
+        return "disable_salad_autostart"
+    if not scheduled_scaling_disabled(group):
+        return "scheduled_scaling_active_or_unverified"
+    if approved_image is not None and group.get("container",{}).get("image")!=approved_image:
+        return "approved_gpu_image_mismatch"
+    return None
+
 def group_path(cfg):
     names = (cfg.salad_organization, cfg.salad_project, cfg.salad_container_group)
     return "/organizations/{}/projects/{}/containers/{}".format(*names) if all(names) else None
@@ -143,7 +166,10 @@ def read_status(cfg, key):
             result = {"status":state or "unknown", "replicas":replica_count if type(replica_count) is int else None,
                       "autostart_policy":autostart if type(autostart) is bool else None,
                       "dispatch_enabled":False, "message":BLOCKER, "instances":[]}
-            result["dedicated_group_compatible"] = type(replica_count) is int and replica_count == 1 and autostart is False
+            approved=os.environ.get("CLIPCUTTER_APPROVED_GPU_IMAGE")
+            reason=group_blocker(group,approved)
+            result["dedicated_group_compatible"] = reason is None
+            result["group_blocker"] = reason
             if state in ("running", "deploying"):
                 instances = _salad_get(client, path + "/instances", key).get("instances")
                 if not isinstance(instances, list):

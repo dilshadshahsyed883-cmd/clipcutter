@@ -104,6 +104,22 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.jid)["progress"],0)
         self.assertEqual(self.client.starts,0)
 
+    def test_verified_job_can_use_ready_worker_during_new_intake(self):
+        self.store.create(request("b"*32))
+        self.assertEqual(self.dispatch.tick(self.jid,allow_during_intake=True),"staging")
+        self.assertEqual(self.dispatch.tick(self.jid,allow_during_intake=True),"running")
+
+    def test_measured_processing_and_delivery_progress(self):
+        self.dispatch.tick(self.jid)
+        self.dispatch.tick(self.jid)
+        self.client.remote["progress"]={"stage":"scan","message":"Frames","done":3,"total":10}
+        self.dispatch.tick(self.jid)
+        self.assertEqual(self.store.get(self.jid)["progress"],30)
+        self.client.finish()
+        with patch("app.modules.studio.dispatch.RESERVE",0):
+            self.assertEqual(self.dispatch.tick(self.jid),"delivering")
+        self.assertEqual(self.store.get(self.jid)["progress"],100)
+
     def test_all_intake_barrier(self):
         self.store.create(request("b"*32))
         with self.assertRaisesRegex(DispatchError,"pending Drive intake"):self.dispatch.tick(self.jid)

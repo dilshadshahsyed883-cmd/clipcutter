@@ -128,12 +128,12 @@ class Dispatcher:
                       (phase,result_sha,canonical(review).decode() if review is not None else None,jid))
     def _pending(self,c):
         return c.execute("SELECT count(*) FROM requests WHERE owner=? AND state IN ('awaiting_input','staging')",(self.store.owner,)).fetchone()[0]
-    def prepare(self,jid):
+    def prepare(self,jid,*,allow_during_intake=False):
         """Single-video only. Explicitly reject unsupported ZIP/folder fan-out and analyzer profile matching."""
         with self.store.connect() as c:
             row=self.store.row(c,jid);request=json.loads(row["payload"]);request["request_id"]=row["request_id"]
             if row["state"]!="ready":raise DispatchError("Drive inputs not ready")
-            if self._pending(c):raise DispatchError("All pending Drive intake must finish before dispatch")
+            if not allow_during_intake and self._pending(c):raise DispatchError("All pending Drive intake must finish before dispatch")
         reason=blocker(request)
         if reason:raise DispatchError(reason)
         if request["input"].get("output_folder"):
@@ -164,11 +164,11 @@ class Dispatcher:
             "source_sha256":files["source.video"]["sha256"],"references_sha256":[x["sha256"] for x in refs]},"files":files}
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            if self.store.row(c,jid)["state"]!="ready" or self._pending(c):raise DispatchError("Intake/queue state changed")
+            if self.store.row(c,jid)["state"]!="ready" or (not allow_during_intake and self._pending(c)):raise DispatchError("Intake/queue state changed")
             if c.execute("SELECT 1 FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone():return
             c.execute("INSERT INTO gpu_attempts VALUES (?,?,?,?,?,?,?,NULL,NULL)",
                       (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"new",self.client.expected_sha,self.client.origin))
-    def tick(self,jid,*,allow_start=True):
+    def tick(self,jid,*,allow_start=True,allow_during_intake=False):
         if not ID.fullmatch(jid):raise DispatchError("Invalid job id")
         locks=safe_dir(self.store.root/"dispatch-locks")
         # One owner-wide dispatch operation at a time, including across processes.
@@ -178,7 +178,7 @@ class Dispatcher:
             row=self._row(jid)
             if not row:
                 if not allow_start:return "paused"
-                self.client.capabilities();self.prepare(jid);row=self._row(jid)
+                self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
             if row["phase"] in ("review_ready","acknowledged","failed","cancelled"):return row["phase"]
@@ -189,7 +189,7 @@ class Dispatcher:
                 if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
                     raise DispatchError("Approved worker does not advertise YouTube support")
                 with self.store.connect() as c:
-                    if self._pending(c):return "intake_pending"
+                    if not allow_during_intake and self._pending(c):return "intake_pending"
                 # Persist intent before any remote side effect. If the remote is missing
                 # after ambiguity, do not silently recreate; require reconciliation.
                 self._phase(jid,"create_intent")
@@ -211,7 +211,7 @@ class Dispatcher:
                 self.store.gpu_upload_progress(jid,acknowledged,total)
                 if not allow_start:return "paused"
                 with self.store.connect() as c:
-                    if self._pending(c):return "intake_pending"
+                    if not allow_during_intake and self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
                 for name,item in m["files"].items():
                     offset=offsets[name]
@@ -226,7 +226,7 @@ class Dispatcher:
                         return "staging"
                 if caps.get("active_renders")!=0:return "gpu_busy"
                 with self.store.connect() as c:
-                    if self._pending(c):return "intake_pending"
+                    if not allow_during_intake and self._pending(c):return "intake_pending"
                 self._phase(jid,"start_intent")
                 remote=self.client.start(a)
                 self._validate(remote,row,m)
@@ -234,6 +234,14 @@ class Dispatcher:
             if state in ("queued","running","cancelling"):
                 if local=="ready":self.store.transition(jid,"ready","processing","GPU accepted verified inputs",0)
                 self._phase(jid,"processing")
+                progress=remote.get("progress")
+                if isinstance(progress,dict):
+                    done,total=progress.get("done"),progress.get("total")
+                    if type(done) is int and type(total) is int and 0<=done<=total and total>0:
+                        label=str(progress.get("stage") or "processing")[:80]
+                        message=str(progress.get("message") or "")[:350]
+                        self.store.gpu_stage_progress(jid,"processing",100*done//total,
+                            "GPU "+label+(": "+message if message else ""))
                 return state
             if state in ("failed","cancelled"):
                 if local in ("ready","processing","delivering"):
@@ -287,10 +295,13 @@ class Dispatcher:
         self._phase(jid,"delivering",digest)
         dest=safe_dir(safe_dir(self.store.root/"outputs")/jid)
         scratch=safe_dir(safe_dir(self.store.root/"delivery-parts")/jid)
+        total=sum(item["size"] for item in items)
+        received=0
         for item in items:
             n=item["name"];p=dest/n;part=scratch/n
             if p.exists():
                 if p.resolve()!=p or not p.is_file() or p.stat().st_size!=item["size"] or sha_file(p)!=item["sha256"]:raise DispatchError("Existing result mismatch")
+                received+=item["size"]
                 continue
             offset=part.stat().st_size if part.exists() else 0
             if offset>item["size"] or part.is_symlink():raise DispatchError("Unsafe delivery partial")
@@ -300,13 +311,15 @@ class Dispatcher:
                 chunk=self.client.fetch(row["attempt_id"],n,offset,length)
                 if len(chunk)!=length:raise DispatchError("Incomplete output chunk")
                 with part.open("ab") as f:f.write(chunk);f.flush();os.fsync(f.fileno())
+                self.store.gpu_stage_progress(jid,"delivering",100*(received+offset+length)//total,
+                    f"GPU downloading: {received+offset+length:,} / {total:,} bytes received")
                 return "delivering"
             if sha_file(part)!=item["sha256"]:raise DispatchError("Complete output digest mismatch; retain partial")
             if item["media_type"]=="video/mp4":verify_format(part,"video",".mp4")
             elif item["media_type"]=="application/json":
                 if item["size"]>MAX_JSON:raise DispatchError("JSON output too large")
                 json.loads(part.read_bytes())
-            part.rename(p)
+            part.rename(p);received+=item["size"]
         from .output_names import allocate
         allocate(self.store,jid,items,m["job"]["request"]["settings"].get("stitched",False))
         folder=m["job"]["request"]["input"].get("output_folder")
