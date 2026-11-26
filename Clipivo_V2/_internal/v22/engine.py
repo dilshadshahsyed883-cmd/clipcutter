@@ -26,7 +26,11 @@ class Engine:
         except Exception as exc:
             if provider=='CPUExecutionProvider': raise
             self.warning='GPU initialization failed; CPU fallback: '+str(exc); return self.load(False)
-        self.device=self.det.get_providers()[0]; self.gpu=self.device!='CPUExecutionProvider'
+        det_provider=self.det.get_providers()[0]; rec_provider=self.rec.get_providers()[0]
+        if provider!='CPUExecutionProvider' and (det_provider!=provider or rec_provider!=provider):
+            self.warning='GPU provider unavailable for one or both sessions; CPU fallback'; return self.load(False)
+        self.device=det_provider; self.gpu=det_provider!='CPUExecutionProvider'
+        if gpu and not self.gpu: self.warning='No compatible GPU provider; using CPU'
     def get(self,image):
         try: return self._get(image)
         except Exception as exc:

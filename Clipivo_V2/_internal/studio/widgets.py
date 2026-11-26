@@ -1,8 +1,12 @@
 import cv2
+from zlib import crc32
 from PySide6.QtCore import Qt,Signal,QRectF
 from PySide6.QtGui import QPainter,QColor,QImage,QPixmap,QPen
 from PySide6.QtWidgets import QWidget,QSizePolicy
 COLORS=['#ff7a5c','#54b8ff','#be8af7','#64ce9b','#f0c15b','#e47da7']
+def person_color(gid):
+    return COLORS[crc32(str(gid).encode())%len(COLORS)]
+
 class Preview(QWidget):
     regionAdded=Signal(object)
     def __init__(self):
@@ -18,14 +22,16 @@ class Preview(QWidget):
         if self.frame is None:p.setPen(QColor('#c7d1df'));p.drawText(self.rect(),Qt.AlignCenter,'Open a video to begin');return
         p.drawImage(r,self.frame)
         for index,(gid,name,box) in enumerate(self.boxes):
-            a,b,c,d=box;p.setPen(QPen(QColor(COLORS[index%len(COLORS)]),2));p.drawRect(QRectF(r.x()+a*r.width(),r.y()+b*r.height(),(c-a)*r.width(),(d-b)*r.height()));p.drawText(int(r.x()+a*r.width()),max(15,int(r.y()+b*r.height())-4),name)
+            a,b,c,d=box;p.setPen(QPen(QColor(person_color(gid)),2));p.drawRect(QRectF(r.x()+a*r.width(),r.y()+b*r.height(),(c-a)*r.width(),(d-b)*r.height()));p.drawText(int(r.x()+a*r.width()),max(15,int(r.y()+b*r.height())-4),name)
         p.setPen(QPen(QColor('#ffae62'),2,Qt.DashLine))
         for a,b,c,d in self.regions:p.drawRect(QRectF(r.x()+a*r.width(),r.y()+b*r.height(),(c-a)*r.width(),(d-b)*r.height()))
     def mousePressEvent(self,event):
         if self.armed and self.rect_image().contains(event.position()):self.origin=event.position()
     def mouseReleaseEvent(self,event):
         if self.origin is None:return
-        r=self.rect_image();clip=lambda v:max(0,min(1,v));x=sorted([clip((self.origin.x()-r.x())/r.width()),clip((event.position().x()-r.x())/r.width())]);y=sorted([clip((self.origin.y()-r.y())/r.height()),clip((event.position().y()-r.y())/r.height())]);self.origin=None;self.armed=False
+        r=self.rect_image()
+        if r.isEmpty():self.origin=None;self.armed=False;return
+        clip=lambda v:max(0,min(1,v));x=sorted([clip((self.origin.x()-r.x())/r.width()),clip((event.position().x()-r.x())/r.width())]);y=sorted([clip((self.origin.y()-r.y())/r.height()),clip((event.position().y()-r.y())/r.height())]);self.origin=None;self.armed=False
         if x[1]-x[0]>.01 and y[1]-y[0]>.01:self.regionAdded.emit([x[0],y[0],x[1],y[1]])
 
 class Timeline(QWidget):
@@ -39,7 +45,7 @@ class Timeline(QWidget):
             x=125+w*i/5;p.setPen(QColor('#8793a5'));p.drawText(int(x),18,f'{d*i/5:.1f}s')
         for i,g in enumerate(groups):
             y=30+i*30;p.setPen(QColor('#dce3ee'));p.drawText(5,y+16,g['name'][:18]);p.fillRect(QRectF(125,y,w,22),QColor('#252c36'))
-            for a,b in g.get('segments',[]):p.fillRect(QRectF(125+a/d*w,y,max(2,(b-a)/d*w),22),QColor('#697280' if g.get('ignored') or g.get('filtered') else COLORS[i%len(COLORS)]))
+            for a,b in g.get('segments',[]):p.fillRect(QRectF(125+a/d*w,y,max(2,(b-a)/d*w),22),QColor('#697280' if g.get('ignored') or g.get('filtered') else person_color(g['id'])))
         p.setPen(QPen(QColor('#ffb44f'),2));x=125+self.position/d*w;p.drawLine(int(x),22,int(x),self.height())
     def mousePressEvent(self,event):
         if self.data:self.seekRequested.emit(max(0,min(self.data['duration'],(event.position().x()-125)/max(1,self.width()-135)*self.data['duration'])))
