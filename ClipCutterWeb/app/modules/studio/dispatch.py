@@ -134,11 +134,26 @@ class Dispatcher:
     def clear_command(self,jid,action):
         with self.store.connect() as c:
             c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action=?",(jid,action))
+    def clean_terminal(self,jid,row,m,remote):
+        state=remote.get("state")
+        if state not in ("failed","cancelled"):raise DispatchError("Terminal cleanup requires confirmed failure/cancellation")
+        # Keep verified VPS sources and any local partial outputs; only discard
+        # worker scratch for a confirmed terminal attempt with a durable ledger.
+        ack=self.client.purge(row["attempt_id"],"discard-failed")
+        self._validate(ack,row,m)
+        if ack.get("state")!=state or ack.get("purged") is not True:
+            raise DispatchError("Terminal attempt cleanup unconfirmed")
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            self.store.row(c,jid)
+            c.execute("INSERT OR IGNORE INTO gpu_attempt_history VALUES (?,?,?,?)",(row["attempt_id"],jid,state,int(time.time())))
+            c.execute("UPDATE gpu_attempts SET phase=? WHERE job_id=? AND attempt_id=?",(state+"_clean",jid,row["attempt_id"]))
+            c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='cancel'",(jid,))
+        return state+"_clean"
+
     def retry_failed(self,jid,row,m):
         a=row["attempt_id"]
-        remote=self.client.status(a)
-        self._validate(remote,row,m)
-        if remote.get("state")!="failed":raise DispatchError("Retry requires confirmed remote failure")
+        if row["phase"]!="failed_clean":raise DispatchError("Retry requires confirmed failed attempt cleanup")
         # Never overwrite partial delivery or published output.
         for folder in ("outputs","delivery-parts"):
             p=self.store.root/folder/jid
@@ -150,16 +165,12 @@ class Dispatcher:
             p=root/filename
             if p.resolve()!=p or not p.is_file() or p.stat().st_size!=item["size"] or sha_file(p)!=item["sha256"]:
                 raise DispatchError("Verified inputs changed; retry held")
-        ack=self.client.purge(a,"discard-failed")
-        self._validate(ack,row,m)
-        if ack.get("state")!="failed" or ack.get("purged") is not True:
-            raise DispatchError("Failed attempt cleanup unconfirmed")
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             current=self.store.row(c,jid)
             if current["state"]!="failed":raise DispatchError("Retry state changed")
             c.execute("INSERT OR IGNORE INTO gpu_attempt_history VALUES (?,?,?,?)",(a,jid,"failed",int(time.time())))
-            changed=c.execute("UPDATE gpu_attempts SET attempt_id=?,phase='new',result_sha=NULL WHERE job_id=? AND attempt_id=? AND phase='failed'",(uuid4().hex,jid,a)).rowcount
+            changed=c.execute("UPDATE gpu_attempts SET attempt_id=?,phase='new',result_sha=NULL,worker_sha=?,gateway=? WHERE job_id=? AND attempt_id=? AND phase='failed_clean'",(uuid4().hex,self.client.expected_sha,self.client.origin,jid,a)).rowcount
             if changed!=1:raise DispatchError("Retry attempt changed")
             c.execute("UPDATE requests SET state='ready',progress=100,message='Verified inputs retained; GPU retry queued',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.store.owner))
             c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='retry'",(jid,))
@@ -218,21 +229,29 @@ class Dispatcher:
             if not row:
                 if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
-            if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
-                raise DispatchError("Worker configuration changed; reconcile recorded attempt")
             command=self.command(jid)
             a=row["attempt_id"];m=json.loads(row["manifest"])
-            if row["phase"]=="new" and command=="cancel":
-                self.store.transition(jid,"ready","cancelled","Cancelled before GPU dispatch")
-                self._phase(jid,"cancelled_clean");self.clear_command(jid,"cancel")
-                return "cancelled_clean"
-            if row["phase"]=="failed" and command=="retry":
-                self.client.capabilities()
+            if row["phase"]=="failed_clean" and command=="retry":
                 return self.retry_failed(jid,row,m)
-            if row["phase"] in ("review_ready","acknowledged","failed","cancelled","cancelled_clean") and not command:return row["phase"]
+            if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
+                raise DispatchError("Worker configuration changed; reconcile recorded attempt")
+            if row["phase"]=="new" and command=="cancel":
+                with self.store.connect() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    if self.store.row(c,jid)["state"]!="ready":raise DispatchError("Local cancellation state changed")
+                    c.execute("UPDATE requests SET state='cancelled',message='Cancelled before GPU dispatch; inputs retained',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.store.owner))
+                    c.execute("UPDATE gpu_attempts SET phase='cancelled_clean' WHERE job_id=? AND attempt_id=?",(jid,a))
+                    c.execute("DELETE FROM gpu_commands WHERE job_id=? AND action='cancel'",(jid,))
+                return "cancelled_clean"
+            if row["phase"] in ("review_ready","acknowledged","failed_clean","cancelled_clean") and not command:return row["phase"]
             caps=self.client.capabilities()
+            if row["phase"] in ("failed","cancelled"):
+                remote=self.client.status(a);self._validate(remote,row,m)
+                if remote.get("state")!=row["phase"]:raise DispatchError("Terminal attempt status changed")
+                return self.clean_terminal(jid,row,m,remote)
             if row["phase"]=="new":
                 if not allow_start or observe_only or (may_start and not may_start()):return "paused"
+                if render_limit>1 and (caps.get("pipeline_version")!=1 or caps.get("concurrency")!=2):raise DispatchError("Worker capacity mismatch")
                 if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
                     raise DispatchError("Approved worker does not advertise YouTube support")
                 with self.store.connect() as c:
@@ -253,8 +272,10 @@ class Dispatcher:
             if command=="cancel" and state=="completed":
                 self.clear_command(jid,"cancel") # completion wins; preserve output
             if state=="staging":
-                if row["phase"] in ("start_intent","processing","delivering","published"):
+                if row["phase"] in ("processing","output_ready","delivering","published"):
                     raise DispatchError("Remote reverted to staging; reconcile")
+                # Same immutable attempt, verified staging state: replaying start
+                # is safe because the worker starts each attempt only once.
                 self._phase(jid,"staging")
                 offsets=remote.get("uploaded")
                 if not isinstance(offsets,dict):raise DispatchError("Invalid remote offsets")
@@ -265,6 +286,7 @@ class Dispatcher:
                 acknowledged=sum(offsets[name] for name in m["files"])
                 self.store.gpu_upload_progress(jid,acknowledged,total)
                 if not allow_start or observe_only or (may_start and not may_start()):return "paused"
+                if render_limit>1 and (caps.get("pipeline_version")!=1 or caps.get("concurrency")!=2):raise DispatchError("Worker capacity mismatch")
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
@@ -309,14 +331,7 @@ class Dispatcher:
                     target="cancelled" if state=="cancelled" and local!="delivering" else "failed"
                     self.store.transition(jid,local,target,"GPU: "+str(remote.get("error") or state)[:500])
                 self._phase(jid,state)
-                if command=="cancel":
-                    ack=self.client.purge(a,"discard-failed")
-                    self._validate(ack,row,m)
-                    if ack.get("state")!=state or ack.get("purged") is not True:
-                        raise DispatchError("Cancelled attempt cleanup unconfirmed")
-                    if state=="cancelled":self._phase(jid,"cancelled_clean")
-                    self.clear_command(jid,"cancel")
-                return state
+                return self.clean_terminal(jid,row,m,remote)
             if state=="completed":
                 if observe_only:
                     self._phase(jid,"output_ready");return "output_ready"
