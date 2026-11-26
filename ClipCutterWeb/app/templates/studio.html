@@ -1,0 +1,54 @@
+<link rel="stylesheet" href="/static/studio.css">
+<div id="studio" data-kind="{{ page.key }}">
+<section class="content-card studio-card">
+<h2>{{ page.title }}</h2>
+<p class="lead">Submit input and processing settings. All video processing will run on the separate GPU worker, not this server.</p>
+<p class="studio-note" role="status" id="studio-capabilities">Checking connection…</p>
+<form id="studio-form">
+<div class="studio-grid">
+<label>Google Drive source link <input name="source" type="url" required maxlength="2048" placeholder="https://drive.google.com/…" autocomplete="off"></label>
+<label>Source type <select name="source_kind"><option value="video">Single video</option><option value="zip">ZIP package</option><option value="folder">Drive folder</option></select></label>
+<label>Output Drive folder (optional) <input name="output_folder" type="url" maxlength="2048" autocomplete="off"></label>
+<label>Reference images — Drive file/folder {% if page.key == 'analyzer' %}(optional){% endif %}<input name="reference_link" type="url" maxlength="2048" autocomplete="off"></label>
+</div>
+{% if page.key == 'extractor' %}
+<h3>Extraction settings</h3>
+<div class="studio-grid">
+<label>Method <select name="mode"><option value="reference">Reference-based appearance scan</option><option value="manual">Manual A/B ranges</option></select></label>
+<label>Match threshold <input name="threshold" type="number" min="0" max="1" step=".01" value=".40" required></label>
+<label>Scan quality <select name="scan_quality"><option>rapid</option><option selected>balanced</option><option>thorough</option></select></label>
+<label>Cut mode <select name="cut_mode"><option value="accurate">Exact cut</option><option value="copy">Keyframe stream copy</option></select></label>
+<label>Output <select name="stitched"><option value="false">Separate clips</option><option value="true">Stitched video</option></select></label>
+<label>Audio <select name="include_audio"><option value="true">Include</option><option value="false">Remove</option></select></label>
+<label>Quality (%) <input name="quality" type="number" min="50" max="100" value="100" required></label>
+<label>Size limit <select name="max_short_side"><option value="0">Original</option><option>720</option><option>1080</option><option>1440</option></select></label>
+<label>Framing <select name="framing"><option value="whole">Whole picture</option><option value="dynamic">Follow person</option><option value="landscape">Landscape only</option><option value="portrait">Portrait only</option><option value="square">Square only</option></select></label>
+<label class="studio-check"><input id="strict-limits" type="checkbox"> Strict duration limits</label>
+<label>Minimum seconds <input name="minimum" type="number" min=".1" max="600" step=".001" value="2.5" disabled></label>
+<label>Maximum seconds <input name="maximum" type="number" min=".1" max="600" step=".001" value="4" disabled></label>
+</div>
+<div id="manual-ranges" hidden><h3>Manual clip ranges (seconds)</h3><div id="range-list"></div><button type="button" id="add-range" class="studio-secondary">Add range</button></div>
+{% else %}
+<h3>Person Analyzer settings</h3>
+<div class="studio-grid">
+<label>Sample interval (ms) <input name="sample_interval_ms" type="number" min="250" max="10000" value="1000" required></label>
+<label>Similarity threshold <input name="similarity_threshold" type="number" min="0" max="1" step=".01" value=".50" required></label>
+<label class="studio-check"><input name="ignore_background_faces" type="checkbox" checked> Ignore background faces</label>
+<label class="studio-check"><input name="ignore_static_faces" type="checkbox" checked> Ignore static faces / logos</label>
+</div>
+<h3>Ignore regions (normalized 0–1, x / y / width / height)</h3><div id="region-list"></div><button type="button" id="add-region" class="studio-secondary">Add region</button>
+{% endif %}
+<p class="studio-note">Input links must be accessible to the configured Drive account. Saving a request does not download, verify or start a GPU job.</p>
+<div class="studio-actions"><button type="submit" id="save-request">Save request</button><span id="studio-status" role="status" aria-live="polite"></span></div>
+</form>
+</section>
+<section class="content-card studio-card">
+<div class="studio-heading"><h2>Request queue</h2><button id="refresh-requests" class="studio-secondary" type="button">Refresh</button></div>
+<p class="studio-note">Only recorded requests and actual backend states are shown. No simulated progress.</p>
+<div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
+</section>
+<section class="content-card studio-card">
+<h2>Verified outputs</h2><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
+<div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
+</section>
+</div><script defer src="/static/studio.js"></script>
