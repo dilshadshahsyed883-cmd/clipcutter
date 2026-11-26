@@ -1,6 +1,6 @@
 # Agent 3 — CapCut independent work checkpoint
 
-Status: **source changes pushed; final three-agent integration NOT started**.
+Status: **three-agent source integration pushed; combined runtime acceptance incomplete**. The original independent checkpoint record below is retained as historical evidence.
 
 Base main: `1973433746a0bc72e6513b428a4ea39df1d104f4`.
 Branch: `work/capcut-integration`.
@@ -39,3 +39,7 @@ Agent 1 and Agent 2 branches exist but their explicitly supplied pushed completi
 Remaining acceptance: real Windows source launch and runtime bootstrap/custom-folder detection; real FFmpeg media and stream-duration edge cases; actual CapCut draft discovery and playback for trims, speed, audio synchronization and canvas fitting; GPU and real face inference; full Qt navigation and regression suite. Short/offset audio is intentionally rejected when exact native representation cannot be guaranteed. Probe metadata can have container-level fallback durations; installed playback is not established.
 
 No EXE build, packaging, BUILD_EXE.bat, GitHub Actions workflow change, delegation or main merge/push was performed. Independent changes are confined to the four owned modules, new regression test and this report.
+
+## Combined integration follow-up
+
+The supplied Agent 1 `61381f891c44899f58f015223ff6b4f1093ebdb7` and Agent 2 `694500d57be3d8fca8c900e310a4d80f80e993dd` were merged as exact parents alongside Agent 3 in `52b7170076e3a9061392fb8227a2dd7d00f5e92a`. No overlapping paths. The earlier integration gate is satisfied. Supervisor source findings were addressed without reimplementing independent work: confirmed identity fixture, no-repeat file capacity and final validation, cancellable background match/pick, lifecycle and canonical fixture alignment. The integrated Python adapter was tested against actual reviewed replacement/free-picker plans with real FFprobe; the focused combined backend suite passed 9 tests. Real Node filesystem suite was not rerun on the integrated head; full regression and offscreen Qt are blocked (no full checkout, no PySide6). See updated TEST_REPORT for precise hashes, commands and outstanding acceptance. Main remains unmerged; review PR only. No EXE, packaging or workflow changes.
