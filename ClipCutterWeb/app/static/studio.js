@@ -61,6 +61,7 @@
      for(const job of data.requests){const tr=document.createElement("tr");
        [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
+       if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&job.message.startsWith("Drive intake:")))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Drive intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
        tr.append(actions);rows.append(tr);}
    }catch(err){status.textContent="Refresh failed: "+err.message;}finally{refreshing=false;}

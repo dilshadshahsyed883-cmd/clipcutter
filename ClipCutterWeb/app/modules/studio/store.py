@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from .contracts import JobRequest
 
 KINDS={"extractor","analyzer"}
-TRANSITIONS={"awaiting_input":{"staging","failed"},"staging":{"ready","failed","cancelled"},"ready":{"processing","cancelled","failed"},"processing":{"delivering","failed","cancelled"},"delivering":{"failed"}}
+TRANSITIONS={"awaiting_input":{"staging","failed"},"failed":{"staging"},"staging":{"ready","failed","cancelled"},"ready":{"processing","cancelled","failed"},"processing":{"delivering","failed","cancelled"},"delivering":{"failed"}}
 
 def safe_dir(path):
     path.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -136,6 +136,14 @@ class Store:
             c.execute("UPDATE requests SET state=?,message=?,progress=?,updated_at=? WHERE id=? AND owner=?",
                 (state,message,progress,int(time.time()),jid,self.owner))
             return self.public(self.row(c,jid))
+
+    def intake_progress(self,jid,progress,message):
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            if self.row(c,jid)["state"]!="staging":
+                raise HTTPException(409,"Stale intake state")
+            c.execute("UPDATE requests SET progress=?,message=?,updated_at=? WHERE id=? AND owner=?",
+                      (progress,message,int(time.time()),jid,self.owner))
 
     def publish_verified_outputs(self,jid,artifacts):
         """Internal receiver boundary. Caller must verify media format and keep files immutable.
