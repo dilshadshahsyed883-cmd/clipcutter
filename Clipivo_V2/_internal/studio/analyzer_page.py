@@ -91,6 +91,7 @@ class AnalyzerPage(QWidget):
         self.drain_preview();self._active=True;self.data=None;self.folder=new_project()
         self.started=time.monotonic();self.scanning=True;self.live_count=0;self.solo=None;self.refresh()
         self.analyze_button.setEnabled(False);self.cancel_button.setEnabled(True)
+        self.window.people_page.setEnabled(False)
         self.stats.setText('Preparing models and People Library…')
         cfg={**self.cfg,'filters':json.loads(json.dumps(self.filters))};folder=self.folder;video=self.video
         store=self.window.character_store
@@ -104,7 +105,9 @@ class AnalyzerPage(QWidget):
             models,signature=resolve_models(cfg,lambda *args:report('download',*args),task.stop.is_set)
             if task.stop.is_set():raise InterruptedError('Cancelled')
             engine=Engine(models,cfg.get('gpu',True),cfg.get('size',640))
-            profiles=Profiles(store).entries(signature,engine,task.stop.is_set)
+            profile_warnings=[]
+            profiles=Profiles(store).entries(signature,engine,task.stop.is_set,profile_warnings)
+            cfg['profile_warnings']=profile_warnings
             if task.stop.is_set():raise InterruptedError('Cancelled')
             cfg['model_signature']=signature
             return folder,run(video,folder,models,cfg,report,task.stop.is_set,task.preview,profiles,engine=engine)
@@ -126,12 +129,13 @@ class AnalyzerPage(QWidget):
         self.refresh()
         elapsed=max(.001,self.data['elapsed_seconds'])
         frames=self.data.get('decoded_frames',0);samples=self.data.get('analyzed_frames',0)
-        self.stats.setText(f"Analysis saved  •  {len(self.data['people'])} groups  •  {frames:,} frames / {samples:,} samples  •  {samples/elapsed:.1f} analysis FPS  •  {self.data['duration']/elapsed:.2f}× realtime  •  {elapsed:.1f}s  •  {self.data['device']}  •  sampled boundaries are estimates"+('  •  '+self.data['warning'] if self.data.get('warning') else ''))
+        self.stats.setText(f"Analysis saved  •  {len(self.data['people'])} groups  •  {frames:,} frames / {samples:,} samples  •  {samples/elapsed:.1f} analysis FPS  •  {self.data['duration']/elapsed:.2f}× realtime  •  {elapsed:.1f}s  •  {self.data['device']}  •  sampled boundaries are estimates"+('  •  '+self.data['warning'] if self.data.get('warning') else '')+(f"  •  {len(self.data['profile_warnings'])} People Library warnings (see analysis.json)" if self.data.get('profile_warnings') else ''))
     def finished(self):
         if self.task.busy:
             QTimer.singleShot(20,self.finished);return
         self.scanning=False;self.drain_preview();self._active=False
         self.analyze_button.setEnabled(True);self.cancel_button.setEnabled(False)
+        self.window.people_page.setEnabled(True)
         self.refresh();self.seek(self.position)
     def failed(self,msg):
         self.scanning=False;self.drain_preview()
