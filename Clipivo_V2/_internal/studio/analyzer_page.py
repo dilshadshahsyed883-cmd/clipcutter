@@ -194,7 +194,12 @@ class AnalyzerPage(QWidget):
         self.seek(t)
     def pause(self):self.playing=False;self.player_timer.stop()
     def persist(self):
-        if self.data and self.folder:save_project(self.folder,self.data);self.refresh();self.seek(self.position)
+        if self.data and self.folder:
+            try:save_project(self.folder,self.data)
+            except (OSError,ValueError) as exc:
+                self.stats.setText('Project not saved: '+str(exc));QMessageBox.warning(self,'Project save failed',str(exc));return False
+            self.refresh();self.seek(self.position);return True
+        return False
     def rename(self):
         if not self.editable() or len(self.selected())!=1:return
         g=self.selected()[0];name,ok=QInputDialog.getText(self,'Rename','Person name',text=g['name'])
@@ -236,7 +241,8 @@ class AnalyzerPage(QWidget):
             group=self.selected()[0]
             if group.get('identity_status') not in ('manual','matched'):raise ValueError('Rename this person before saving a reusable identity.')
             group['library_id']=Profiles(self.window.character_store).save(group,self.folder,self.data.get('model_signature'))
-            self.persist();self.stats.setText('Saved encrypted profile and references to People Library');self.window.people_page.refresh()
+            self.window.people_page.refresh()
+            if self.persist():self.stats.setText('Saved encrypted profile and references to People Library')
         except Exception as e:self.failed(str(e))
     def to_extractor(self):
         if not self.editable() or not self.selected():return
@@ -277,7 +283,8 @@ class AnalyzerPage(QWidget):
         dest=QFileDialog.getExistingDirectory(self,'Export JSON, CSV, TXT and references')
         if not dest:return
         try:
-            self.persist();target=Path(dest)/('Clipivo_analysis_'+uuid.uuid4().hex[:8]);shutil.copytree(self.folder,target);self.stats.setText('Exported project and references: '+str(target))
+            if not self.persist():return
+            target=Path(dest)/('Clipivo_analysis_'+uuid.uuid4().hex[:8]);shutil.copytree(self.folder,target);self.stats.setText('Exported project and references: '+str(target))
         except Exception as e:self.failed(str(e))
     def shutdown(self):
         self.task.cancel();self.timer.stop();self.pause()
