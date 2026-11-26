@@ -14,6 +14,15 @@ class StudioLayoutTests(unittest.TestCase):
             self.assertNotIn('name="source_kind"',html)
             self.assertEqual('id="reference-files"' in html,kind=="extractor")
             self.assertEqual("Advanced settings" in html,kind=="analyzer")
+    def test_four_input_row(self):
+        env=Environment(loader=FileSystemLoader(ROOT/"app/templates"))
+        html=env.get_template("studio.html").render(page={"key":"extractor","title":"Clip Extractor"})
+        row=html.split('studio-input-row">',1)[1].split('<div id="reference-details">',1)[0]
+        for control in ('name="source"','name="output_folder"','name="reference_mode"','id="reference-browse"','name="reference_link"'):
+            self.assertIn(control,row)
+        self.assertNotIn('id="reference-preview"',row)
+        css=(ROOT/"app/static/studio.css").read_text()
+        self.assertIn("grid-template-columns:repeat(4,minmax(0,1fr))",css)
     def test_gpu_template_compact(self):
         html=(ROOT/"app/templates/gpu.html").read_text()
         self.assertNotIn("Use a separate dedicated ClipCutter group",html)
