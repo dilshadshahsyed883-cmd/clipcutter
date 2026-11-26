@@ -13,7 +13,7 @@
 <label>Source link (Drive / YouTube) <input name="source" type="url" required maxlength="2048" placeholder="https://drive.google.com/…" autocomplete="off"></label>
 
 <label>Output Drive folder (optional) <input name="output_folder" type="url" maxlength="2048" autocomplete="off"></label>
-{% if page.key == 'extractor' %}<div><label>Reference images<select name="reference_mode"><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label><label id="reference-drive" hidden>Drive file/folder <input name="reference_link" type="url" maxlength="2048" autocomplete="off" disabled></label><div id="reference-upload"><label>Choose images <input id="reference-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp"></label><small>JPG, PNG, WEBP · Up to 12 images, 3 MiB total</small><div id="reference-preview" aria-live="polite"></div></div></div>{% endif %}
+{% if page.key == 'extractor' %}<div><label>Reference images<select name="reference_mode"><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label><label id="reference-drive" hidden>Drive file/folder <input name="reference_link" type="url" maxlength="2048" autocomplete="off" disabled></label><div id="reference-upload"><label>Choose images <input id="reference-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp"></label><small>JPG, PNG, WEBP · Up to 12 images · 10 MiB each · 120 MiB total</small><div id="reference-preview" aria-live="polite"></div></div></div>{% endif %}
 </div>
 {% if page.key == 'extractor' %}
 <h3>Extraction settings</h3>
@@ -59,4 +59,4 @@
 <h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2><label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-subtabs-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-upload-capacity-1"></script>

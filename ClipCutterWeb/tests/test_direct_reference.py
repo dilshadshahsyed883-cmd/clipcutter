@@ -50,3 +50,33 @@ class DirectReferenceTests(unittest.TestCase):
             active=s.create(JobRequest.model_validate(p))
             s.transition(active["id"],"awaiting_input","staging","test")
             with self.assertRaises(HTTPException):s.delete_request(active["id"])
+
+    def test_larger_upload_and_limits(self):
+        from app.modules.studio.uploads import MAX_IMAGE_BYTES,MAX_BYTES,transfer
+        p=request();p["settings"].pop("reference_link")
+        data=bytes([137,80,78,71,13,10,26,10])+b"x"*(4*1024**2)
+        def image(content):return UploadFile(filename="ref.png",file=BytesIO(content))
+        with tempfile.TemporaryDirectory() as d,patch("app.modules.studio.uploads.RESERVE",0):
+            root=Path(d).resolve();s=Store("owner",root)
+            j=create_uploaded(s,json.dumps(p),[image(data),image(data)])
+            tmp=root/"stage";tmp.mkdir();manifest=[]
+            self.assertEqual(stage_uploads(s,j["id"],j["settings"]["reference_uploads"],tmp,manifest,MAX_BYTES),2*len(data))
+            self.assertEqual(len(manifest),2)
+            self.assertEqual((tmp/manifest[0]["file"]).read_bytes(),data)
+            p["request_id"]="b"*32
+            with self.assertRaises(HTTPException) as e:
+                create_uploaded(s,json.dumps(p),[image(b"x"*(MAX_IMAGE_BYTES+1))])
+            self.assertEqual(e.exception.status_code,413)
+            with patch("app.modules.studio.uploads.MAX_BYTES",len(data)+1):
+                with self.assertRaises(HTTPException) as e:
+                    create_uploaded(s,json.dumps(p),[image(data),image(data)])
+                self.assertEqual(e.exception.status_code,413)
+            self.assertEqual(len(s.list("extractor")),1)
+    def test_nginx_route_capacity(self):
+        root=Path(__file__).resolve().parents[1]
+        conf=(root/"deploy/nginx-upload-location.conf").read_text()
+        self.assertIn("location = /api/v1/studio/requests/upload",conf)
+        self.assertIn("client_max_body_size 128m;",conf)
+        self.assertIn("proxy_request_buffering off;",conf)
+        self.assertIn("proxy_read_timeout 3600s;",conf)
+        self.assertIn("client_max_body_size 4m;",(root/"deploy/nginx-cutover.sh").read_text())

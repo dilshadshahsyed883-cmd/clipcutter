@@ -79,6 +79,7 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Strict-Transport-Security "max-age=31536000" always;
     client_max_body_size 4m;
+$(sed "s/__PORT__/$PORT/g" "$ROOT/current/deploy/nginx-upload-location.conf")
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_set_header Host \$host;

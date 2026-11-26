@@ -10,8 +10,23 @@ from .contracts import JobRequest
 from .store import safe_dir
 from .intake import TYPES, RESERVE, verify_format
 
-MAX_BYTES=3*1024**2  # leave room for multipart framing under the existing 4 MiB nginx cap
+MAX_IMAGE_BYTES=10*1024**2
 MAX_IMAGES=12
+MAX_BYTES=MAX_IMAGES*MAX_IMAGE_BYTES
+CHUNK=1024**2
+
+def transfer(source,limit,target=None):
+    """Read bounded chunks, optionally copy and hash; never buffer a whole upload."""
+    digest=hashlib.sha256();size=0
+    while True:
+        chunk=source.read(min(CHUNK,limit-size+1))
+        if not chunk:break
+        size+=len(chunk)
+        if size>limit:raise HTTPException(413,"Reference image or combined size exceeds limit")
+        digest.update(chunk)
+        if target is not None:target.write(chunk)
+    if not size:raise HTTPException(422,"Empty reference image")
+    return size,digest.hexdigest()
 
 def create_uploaded(store,payload,images):
     if not 1<=len(images)<=MAX_IMAGES:
@@ -26,11 +41,11 @@ def create_uploaded(store,payload,images):
         for image in images:
             suffix=Path(image.filename or "").suffix.lower()
             if suffix not in TYPES["image"]: raise ValueError()
-            content=image.file.read(MAX_BYTES-total+1)
-            total+=len(content)
-            if not content or total>MAX_BYTES:
-                raise HTTPException(413,"Reference images must total at most 3 MiB")
-            records.append((suffix,content,hashlib.sha256(content).hexdigest()))
+            image.file.seek(0)
+            size,digest=transfer(image.file,min(MAX_IMAGE_BYTES,MAX_BYTES-total))
+            total+=size
+            image.file.seek(0)
+            records.append((suffix,image.file,digest,size))
         data["settings"]["reference_uploads"]=[x[2] for x in records]
         req=JobRequest.model_validate(data)
     except (ValueError,TypeError,ValidationError):
@@ -47,10 +62,11 @@ def create_uploaded(store,payload,images):
             raise HTTPException(507,"Insufficient VPS storage reserve")
         safe_dir(target)
         try:
-            for i,(suffix,content,_) in enumerate(records,1):
+            for i,(suffix,source,digest,size) in enumerate(records,1):
                 p=target/f"{i:04d}{suffix}"
                 with os.fdopen(os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600),"wb") as f:
-                    f.write(content);f.flush();os.fsync(f.fileno())
+                    if transfer(source,size,f)!=(size,digest):raise RuntimeError("Upload changed while saving")
+                    f.flush();os.fsync(f.fileno())
                 verify_format(p,"image",suffix)
             for d in (target,root):
                 fd=os.open(d,os.O_RDONLY|os.O_DIRECTORY)
@@ -73,13 +89,15 @@ def stage_uploads(store,jid,digests,tmp,manifest,remaining):
         suffix=p.suffix.lower()
         if p.name!=f"{i:04d}{suffix}" or suffix not in TYPES["image"] or p.resolve()!=p or not p.is_file():
             raise RuntimeError("Unsafe uploaded reference")
-        if not 0<p.stat().st_size<=min(MAX_BYTES-total,remaining-total):
+        size=p.stat().st_size
+        if not 0<size<=min(MAX_IMAGE_BYTES,MAX_BYTES-total,remaining-total):
             raise RuntimeError("Uploaded references exceed limits")
-        content=p.read_bytes();size=len(content);total+=size
-        if hashlib.sha256(content).hexdigest()!=digest:raise RuntimeError("Uploaded reference checksum mismatch")
         if shutil.disk_usage(tmp).free-RESERVE<size:raise RuntimeError("Insufficient VPS storage reserve")
         name=f"reference-{len(manifest)+1:04d}{suffix}"
-        with (tmp/name).open("xb") as f:f.write(content);f.flush();os.fsync(f.fileno())
+        with p.open("rb") as src,(tmp/name).open("xb") as f:
+            if transfer(src,size,f)!=(size,digest):raise RuntimeError("Uploaded reference checksum mismatch")
+            f.flush();os.fsync(f.fileno())
+        total+=size
         verify_format(tmp/name,"image",suffix)
         manifest.append({"role":"reference","file":name,"size":size,"sha256":digest,"original_name":p.name})
     return total
