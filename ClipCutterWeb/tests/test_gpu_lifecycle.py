@@ -73,6 +73,15 @@ class Tests(unittest.TestCase):
                 self.assertEqual(self.tick(),"scheduled_scaling_active_or_unverified")
         self.assertEqual(self.api.posts,[])
 
+    def test_running_worker_reused_during_later_intake(self):
+        self.job()
+        self.job("b"*32,ready=False)
+        self.api.state="running"
+        self.api.item.update(state="running",ready=True)
+        self.assertEqual(self.tick(),"ready")
+        self.assertEqual(self.api.posts,[])
+        self.assertEqual(self.tick(paused=True),"ready_dispatch_blocked")
+
     def test_intake_barrier_and_start_journal(self):
         self.job(ready=True);self.job("b"*32,ready=False)
         self.assertEqual(self.tick(),"waiting_for_drive_or_reconciliation")
