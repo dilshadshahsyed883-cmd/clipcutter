@@ -16,7 +16,6 @@ import shutil
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
 DIST = 'https://nodejs.org/dist'
 FALLBACK = 'v24.21.0'
 
@@ -49,11 +48,27 @@ def latest_lts(arch):
         return FALLBACK
 
 
-def install():
+def _digest(path):
+    with path.open('rb') as f:
+        return hashlib.file_digest(f, 'sha256').hexdigest()
+
+
+def verified_cache(dest):
+    try:
+        marker=json.loads((dest/'clipivo-node-verification.json').read_text(encoding='utf-8'))
+        return bool(re.fullmatch(r'[a-f0-9]{64}',marker['archive_sha256'])) and _digest(dest/'node.exe')==marker['exe_sha256']
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def install(data_root=None):
     if os.name != 'nt':
         raise RuntimeError('Portable setup is only needed on Windows')
-    dest = ROOT / 'runtime' / 'node'
-    if (dest / 'node.exe').is_file():
+    if data_root is None:
+        from studio.storage import root
+        data_root=root()
+    dest = Path(data_root) / 'runtime' / 'node'
+    if verified_cache(dest):
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     arch = architecture()
@@ -86,6 +101,8 @@ def install():
         source = Path(temp) / top
         if not (source / 'node.exe').is_file():
             raise RuntimeError('Official runtime ZIP missing node.exe')
+        (source/'clipivo-node-verification.json').write_text(json.dumps(dict(version=version,archive_sha256=sha.hexdigest(),exe_sha256=_digest(source/'node.exe'))),encoding='utf-8')
+        if verified_cache(dest): return dest
         if dest.exists():
             shutil.rmtree(dest)
         shutil.move(str(source), str(dest))
