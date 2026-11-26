@@ -137,8 +137,9 @@ class Store:
                 raise HTTPException(409,"Active or batch parent requests cannot be deleted")
             if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone():
                 attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
-                if attempt and attempt["phase"] not in ("acknowledged","failed","cancelled"):
+                if attempt and attempt["phase"] not in ("acknowledged","failed","cancelled","cancelled_clean"):
                     raise HTTPException(409,"GPU attempt must be reconciled before deletion")
+            if c.execute("SELECT 1 FROM gpu_commands WHERE job_id=?",(jid,)).fetchone():raise HTTPException(409,"GPU action pending")
             c.execute("UPDATE requests SET state='deleted',message='Deleted by owner',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
             return self.public(self.row(c,jid))
 
