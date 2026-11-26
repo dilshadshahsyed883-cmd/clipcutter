@@ -154,7 +154,7 @@ class Lifecycle:
                     if not zero_metrics(self.worker.capabilities()):return done("worker_busy")
                     r["stop_intent"]=True;self.idle_since=None
                     return self._post(r,"stop")
-                if paused or work["intake"]:return done("ready_dispatch_blocked")
+                if paused:return done("ready_dispatch_blocked")
                 return done("ready")
             if stage!="downloading":
                 r.update(download_transition=None,accepted=False,progress=None)
