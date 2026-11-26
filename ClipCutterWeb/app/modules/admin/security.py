@@ -214,7 +214,7 @@ class SecurityService:
             salt=self.salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32
         )
         correct_user = isinstance(username, str) and hmac.compare_digest(
-            username.casefold(), self.username.casefold()
+            username.casefold().encode("utf-8"), self.username.casefold().encode("utf-8")
         )
         if not (correct_user and hmac.compare_digest(expected, self.password_digest)):
             with self._db() as con:

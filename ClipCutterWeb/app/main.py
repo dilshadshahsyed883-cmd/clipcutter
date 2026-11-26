@@ -39,8 +39,8 @@ def create_app():
         return {"ok": True, "service": "clipcutter-web"}
 
     @app.get("/")
-    async def home():
-        return RedirectResponse("/auth/login", status_code=303)
+    async def home(_: Principal = Depends(current_principal)):
+        return RedirectResponse("/dashboard", status_code=303)
 
     @app.get("/api/v1/session")
     async def session(principal: Principal = Depends(current_principal)):

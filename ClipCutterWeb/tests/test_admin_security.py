@@ -37,8 +37,6 @@ class LocalAdminSecurityTests(unittest.TestCase):
             "CLIPCUTTER_ADMIN_USERNAME": "owner",
             "CLIPCUTTER_ADMIN_PASSWORD_HASH": self.encoded,
             "CLIPCUTTER_ADMIN_SESSION_SECRET": "local-admin-private-secret-length-over-32-TEST",
-            "LUM_SESSION_SECRET": "different-uploader-private-secret-over-32-TEST",
-            "CLIPCUTTER_UPLOADER_ENABLED": "0",
         }
         for unused in ("CLIPCUTTER_SCENE_SSO_SECRET", "CLIPCUTTER_SCENE_USERS_DB",
                        "CLIPCUTTER_SCENE_PUBLIC_ORIGIN"):
@@ -102,8 +100,8 @@ class LocalAdminSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.get("/healthz").status_code, 200)
 
     def test_forged_headers_and_scene_cookie_cannot_authenticate(self):
-        for path in ("/admin", "/api/v1/admin/users", "/api/v1/session",
-                     "/dashboard", "/studio/analyzer", "/studio/analyzer"):
+        for path in ("/", "/admin", "/api/v1/admin/users", "/api/v1/session",
+                     "/dashboard", "/studio/extractor", "/studio/analyzer"):
             with self.subTest(path=path):
                 res = self.client.get(path, headers={
                     "X-Auth-User": "owner", "X-Is-Admin": "1",
@@ -114,11 +112,10 @@ class LocalAdminSecurityTests(unittest.TestCase):
         self.client.cookies.set("__Host-concat_session", "x" * 64)
         self.assertEqual(self.client.get("/dashboard").status_code, 401)
 
-    def test_local_login_dashboard_clipcutter_uploader_and_admin(self):
+    def test_local_login_dashboard_studio_and_admin(self):
         csrf = self._signed_in()
         for path in ("/dashboard", "/studio/extractor", "/studio/analyzer",
-                     "/studio/extractor", "/studio/analyzer",
-                     "/studio/analyzer", "/admin", "/api/v1/session"):
+                     "/admin", "/api/v1/session"):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200, response.text[:250])
