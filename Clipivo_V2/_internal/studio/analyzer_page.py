@@ -247,16 +247,19 @@ class AnalyzerPage(QWidget):
     def to_extractor(self):
         if not self.editable() or not self.selected():return
         from core.models import ClipRange
-        self.window.open_video(Path(self.video));self.window._select_page(0)
-        # Probe is asynchronous: transfer ranges once the same source is ready.
         from .picker import constrain_ranges
         cfg=load_settings().get('clip_limits',{})
-        raw=[(a,b) for g in self.selected() for a,b in g['segments'] if not (g.get('ignored') or g.get('filtered'))]
+        raw=sorted((a,b) for g in self.selected() for a,b in g['segments'] if not (g.get('ignored') or g.get('filtered')) and b>a)
+        union=[]
+        for a,b in raw:
+            if union and a<union[-1][1]:union[-1]=(union[-1][0],max(b,union[-1][1]))
+            else:union.append((a,b))
         if cfg.get('enabled'):
-            raw,discarded=constrain_ranges(raw,cfg.get('minimum',2.5),cfg.get('maximum',4.))
+            union,discarded=constrain_ranges(union,cfg.get('minimum',2.5),cfg.get('maximum',4.))
             self.stats.setText(f'Clip limits applied; {discarded:.3f}s excluded because shorter than the minimum.')
-        ranges=[ClipRange(round(a*1000),round(b*1000)) for a,b in raw]
-        self.window._pending_analyzer_ranges=(str(Path(self.video).resolve()),ranges)
+        ranges=[ClipRange(round(a*1000),round(b*1000)) for a,b in union if round(b*1000)>round(a*1000)]
+        if not ranges:return self.failed('No eligible appearances to transfer; existing extractor clips were not changed.')
+        if self.window.request_analyzer_ranges(Path(self.video),ranges):self.window._select_page(0)
     def arm_region(self):
         if self.busy:return
         self.preview.armed=True;self.stats.setText('Drag a rectangle over the preview to exclude faces in that region.')
