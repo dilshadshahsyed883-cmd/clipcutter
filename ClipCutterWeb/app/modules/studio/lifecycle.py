@@ -48,6 +48,12 @@ def identity(i):
     if version is None:raise ValueError("Missing instance version")
     return "/".join((str(UUID(i["id"])),str(UUID(i["machine_id"])),str(version)))
 
+def scheduled_scaling_disabled(group):
+    """Salad uses a hyphenated JSON field; accept an explicit legacy false too."""
+    keys=("scheduled-scaling-enabled","scheduled_scaling_enabled")
+    reported=[group[key] for key in keys if key in group]
+    return bool(reported) and all(value is False for value in reported)
+
 def zero_metrics(caps):
     return all(type(caps.get(k)) is int and caps[k]==0 for k in ("active_renders","staging","undelivered"))
 
@@ -110,7 +116,7 @@ class Lifecycle:
         try:
             group=self.api.group()
             if (type(group.get("replicas")) is not int or group["replicas"]!=1 or
-                group.get("autostart_policy") is not False or group.get("scheduled_scaling_enabled") is not False or
+                group.get("autostart_policy") is not False or not scheduled_scaling_disabled(group) or
                 group.get("container",{}).get("image")!=self.api.image):
                 return done("dedicated_group_or_image_mismatch")
             state=group.get("current_state",{}).get("status")
