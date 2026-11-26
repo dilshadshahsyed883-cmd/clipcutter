@@ -201,6 +201,7 @@ class OutputShape:
     # pixels it keeps than the source did, allowing for the codecs' efficiency.
     source_codec: str = ""
     source_kbps: int = 0
+    strict_clip_limits: tuple[float, float] | None = None
 
     def needs_reencode(self) -> bool:
         width, height = self.frame_size
@@ -307,6 +308,7 @@ def export_ranges(
         mode = "accurate"
 
     if not enabled:
+        if limits.get('enabled'):raise ExportError(f'No clip satisfies duration limits; excluded {dropped_seconds:.3f}s of short remainders.')
         raise ExportError("No enabled clips are available to export.")
     output_dir.mkdir(parents=True, exist_ok=True)
     if target is not None:
@@ -335,6 +337,8 @@ def export_ranges(
         else:
             encoder_label = "NVIDIA NVENC" if resolved_encoder == "nvenc" else "CPU libx265"
         shape = _with_framed_size(shape or OutputShape(), enabled)
+        if limits.get('enabled'):
+            shape = replace(shape, strict_clip_limits=(minimum,maximum))
         if mode == "accurate":
             try:
                 info = probe_video(source, include_keyframes=False)
@@ -543,6 +547,15 @@ def _export_one(
             logs.append("NVIDIA NVENC failed; retrying this clip with CPU libx265.")
             cpu_command = _replace_nvenc_with_cpu(command, source_video_bitrate_kbps, shape.quality, ceiling)
             _run(cpu_command, cancel_event, logs, duration, progress_fraction)
+        if shape.strict_clip_limits:
+            _check_cancel(cancel_event)
+            probe = subprocess.run([tool_path('ffprobe'),'-v','error','-select_streams','v:0',
+                '-show_entries','stream=duration','-of','default=noprint_wrappers=1:nokey=1',str(target)],
+                capture_output=True,text=True,timeout=30,check=True)
+            actual = float(probe.stdout.strip())
+            lo, hi = shape.strict_clip_limits
+            if not math.isfinite(actual) or not lo-1e-6 <= actual <= hi+1e-6:
+                raise ExportError(f'Encoded clip duration {actual:.6f}s violates {lo:g}–{hi:g}s limits. Adjust limits or source frame rate.')
     except Exception:
         target.unlink(missing_ok=True)
         raise
