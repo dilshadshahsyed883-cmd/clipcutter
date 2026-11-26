@@ -1,0 +1,81 @@
+name: ClipCutter GPU candidate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ClipCutterGPU/**'
+      - '.github/workflows/clipcutter-gpu-candidate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ClipCutterGPU/**'
+      - '.github/workflows/clipcutter-gpu-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipcutter-gpu-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and verify exact candidate
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ClipCutterGPU/build-candidate.sh "$GITHUB_SHA"
+      - name: Publish validated immutable main candidate
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.build.outputs.image }}
+          REPORT: ${{ steps.build.outputs.report }}
+        run: |
+          set -euo pipefail
+          test "$IMAGE" = "ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate:$GITHUB_SHA"
+          test "$(git ls-remote --exit-code https://github.com/dilshadshahsyed883-cmd/clipcutter.git refs/heads/main | awk '{print $1}')" = "$GITHUB_SHA"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          # Do not overwrite a published tag. Only a definitive registry not-found permits push.
+          if docker manifest inspect "$IMAGE" > "$REPORT/existing-manifest.json" 2> "$REPORT/registry-check.txt"; then
+            echo 'Candidate tag already exists; refusing overwrite' >&2
+            exit 1
+          fi
+          grep -Eiq 'manifest unknown|name unknown|no such manifest|manifest.*not found' "$REPORT/registry-check.txt" || { cat "$REPORT/registry-check.txt" >&2; exit 1; }
+          docker push "$IMAGE"
+          REFERENCE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+          [[ "$REFERENCE" =~ ^ghcr\.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate@sha256:[a-f0-9]{64}$ ]]
+          docker manifest inspect "$REFERENCE" >/dev/null
+          printf '%s\n%s\n' "$IMAGE" "$REFERENCE" > "$REPORT/image-reference.txt"
+          export REFERENCE
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["REPORT"])
+          d=json.loads((p/"image-smoke.json").read_text())
+          assert d["source_sha"]==os.environ["GITHUB_SHA"]
+          d.update(image=os.environ["IMAGE"],digest=os.environ["REFERENCE"])
+          (p/"image-reference.json").write_text(json.dumps(d,indent=2))
+          PY
+          printf 'Tag: %s\n\nDigest: %s\n\nPhysical GPU verification: pending. No deployment.\n' "$IMAGE" "$REFERENCE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save image validation report
+        if: always() && steps.build.outputs.report != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipCutter-GPU-image-reference
+          path: ${{ steps.build.outputs.report }}
+          if-no-files-found: error

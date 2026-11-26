@@ -16,6 +16,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: -r requirements.txt
 COPY worker ./worker
 COPY tests ./tests
+RUN pip check && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q hevc_nvenc
 RUN python -m compileall -q worker && python -c "import av,cv2,numpy,onnxruntime,pydantic; from worker.job import Staged" \
     && groupadd --gid 10001 clipworker && useradd --uid 10001 --gid 10001 --no-create-home clipworker \
     && mkdir /data /models && chown clipworker:clipworker /data

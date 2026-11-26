@@ -8,7 +8,11 @@ SHA="$1"
 REPO="https://github.com/dilshadshahsyed883-cmd/clipcutter.git"
 ROOT="$(git rev-parse --show-toplevel)"
 [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$SHA" ]] || { echo "Checkout SHA mismatch"; exit 1; }
-[[ "$(git ls-remote --exit-code "$REPO" refs/heads/main | awk '{print $1}')" == "$SHA" ]] || { echo "Approved SHA must match remote main"; exit 1; }
+if [[ "${GITHUB_ACTIONS:-}" == true && "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
+  [[ "${GITHUB_SHA:-}" == "$SHA" ]] || { echo "PR checkout mismatch"; exit 1; }
+else
+  [[ "$(git ls-remote --exit-code "$REPO" refs/heads/main | awk '{print $1}')" == "$SHA" ]] || { echo "Approved SHA must match remote main"; exit 1; }
+fi
 [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || { echo "Clean checkout required"; exit 1; }
 for c in docker python3 openssl; do command -v "$c" >/dev/null; done
 IMAGE="ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate:$SHA"
@@ -35,5 +39,8 @@ export SMOKE_BASE="http://$(docker port "$NAME" 8080/tcp | head -n1)"
 python3 "$WORK/src/tests/http_smoke.py"
 docker image inspect --format '{{.Id}}' "$IMAGE" > "$REPORT/image-id.txt"
 printf '%s\n' "$IMAGE" > "$REPORT/image-tag.txt"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'image=%s\nreport=%s\n' "$IMAGE" "$REPORT" >> "$GITHUB_OUTPUT"
+fi
 echo "CANDIDATE_BUILD=PASS TAG=$IMAGE REPORT=$REPORT"
 echo "Physical GPU, model provisioning and remote transport not verified; no image pushed."

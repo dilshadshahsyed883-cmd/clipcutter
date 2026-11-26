@@ -148,7 +148,7 @@ def run(root: Path, action: str, cancel: Event):
             for chunk in iter(lambda:f.read(1024*1024),b""):
                 if cancel.is_set(): raise InterruptedError("Cancelled")
                 digest.update(chunk)
-        artifacts.append({"name":path.name,"size":path.stat().st_size,"duration_ms":actual,"sha256":digest.hexdigest()})
+        artifacts.append({"name":path.name,"size":path.stat().st_size,"duration_ms":actual,"sha256":digest.hexdigest(),"media_type":"video/mp4"})
     if not artifacts: raise RuntimeError("No verified outputs")
     if cancel.is_set(): raise InterruptedError("Cancelled")
     publish(root,"export-result.json",{"state":"completed","source_sha256":req.source_sha256,"artifacts":artifacts})
