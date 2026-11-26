@@ -115,18 +115,17 @@ class Scheduler:
             current=next((x for x in rows if x["phase"] in ("create_intent","staging","start_intent","processing","delivering","published","scan_receipt","review")),None)
             if current:
                 try:
-                    result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"))
+                    result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"),allow_during_intake=state in ("ready","worker_busy"))
                     self.control.mark(result)
                     return result
                 except DispatchError as exc:
                     self.control.mark("worker_reconcile_required: "+str(exc)[:250])
                 return
             if paused or action=="stop" or state!="ready":return
-            if any(x["state"] in ("awaiting_input","staging") for x in rows):return
             next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
             if next_job:
                 try:
-                    result=self.dispatch.tick(next_job["id"])
+                    result=self.dispatch.tick(next_job["id"],allow_during_intake=True)
                     self.control.mark(result)
                     return result
                 except DispatchError as exc:
