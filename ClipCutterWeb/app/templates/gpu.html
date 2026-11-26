@@ -1,0 +1,43 @@
+<link rel="stylesheet" href="/static/studio.css?v=20261126-margin-parity-1">
+<div id="studio" data-kind="gpu">
+  <section class="content-card studio-card">
+    <h2>GPU Config</h2>
+    <p class="studio-note" id="gpu-capability" role="status">Loading configuration…</p>
+    <form id="gpu-form">
+      <fieldset id="gpu-fields" disabled style="border:0;padding:0;margin:0;min-width:0">
+        <h3>Salad Connection Setup</h3>
+        <p class="studio-note">Use a separate dedicated ClipCutter group with one replica and Salad autostart OFF. Never use the Concat group.</p>
+        <div class="studio-grid">
+          <label>Organization slug<input name="salad_organization" pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" maxlength="63"></label>
+          <label>Project slug<input name="salad_project" pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" maxlength="63"></label>
+          <label>Container group slug<input name="salad_container_group" pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" maxlength="63"></label>
+          <label>Salad API key<input name="salad_key" type="password" autocomplete="new-password" maxlength="512" placeholder="Blank retains saved key"><span id="gpu-salad-key-state" class="studio-note"></span></label>
+          <label>HTTPS worker gateway<input name="worker_gateway" type="url" maxlength="512"></label>
+          <label>Worker API token<input name="worker_key" type="password" autocomplete="new-password" maxlength="512" placeholder="Blank retains saved token"><span id="gpu-worker-key-state" class="studio-note"></span></label>
+          <label class="studio-check"><input name="clear_salad_key" type="checkbox"> Remove saved Salad key</label>
+          <label class="studio-check"><input name="clear_worker_key" type="checkbox"> Remove saved worker token</label>
+        </div>
+        <h3>Salad Worker Automation</h3>
+        <div class="studio-grid">
+          <label>Operating mode<select name="auto_start"><option value="false">Manual</option><option value="true">Automatic</option></select></label>
+          <label>Minimum image download (%)<input name="image_pull_threshold" type="number" min="1" max="100" step="1" required></label>
+          <label>Download window (seconds)<input name="image_pull_seconds" type="number" min="5" max="600" step="1" required></label>
+          <label>Maximum reallocations per cycle<input name="salad_max_reallocations" type="number" min="0" max="3" step="1" required></label>
+          <label>Inter-attempt cooldown (seconds)<input name="salad_reallocate_cooldown" type="number" min="5" max="600" step="1" required></label>
+          <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2">2 (requires resource acceptance)</option></select></label>
+        </div>
+        <p id="gpu-rule" class="studio-note" aria-live="polite"></p>
+        <p class="studio-note">Automatic shutdown: 60 seconds after the queue and verified deliveries finish. Settings are saved now; execution is gated until the transport is available.</p>
+        <div class="studio-actions"><button type="submit" id="gpu-save">Save Automation Settings</button><span id="gpu-save-status" role="status"></span></div>
+      </fieldset>
+    </form>
+  </section>
+  <section class="content-card studio-card">
+    <div class="studio-heading"><h2>Worker status</h2><button type="button" id="gpu-refresh" class="studio-secondary" disabled>Refresh Salad status</button></div>
+    <p id="gpu-status" role="status" class="studio-note">Status not checked.</p>
+    <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Instance</th><th>State</th><th>Image pull</th><th>Salad ready</th><th>Updated</th></tr></thead><tbody id="gpu-instances"></tbody></table></div>
+    <div class="studio-actions"><button type="button" disabled>Start Worker</button><button type="button" disabled>Stop Worker</button><button type="button" disabled>Retry Worker Action</button></div>
+    <p class="studio-note">Start, stop and reallocation are unavailable until Drive intake, verified worker dispatch and safe delivery are integrated. Salad readiness is not worker health.</p>
+  </section>
+</div>
+<script defer src="/static/gpu.js?v=20261126-gpu-config-1"></script>
