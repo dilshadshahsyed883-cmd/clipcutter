@@ -102,6 +102,10 @@ def cancel(job:str,s:Store=Depends(store)):
         discard_uploads(s,job)
         return row
 
+@router.post("/requests/{job}/gpu/{action}",dependencies=[Depends(require_csrf)],status_code=202)
+def gpu_action(job:str,action:Literal["cancel","retry"],s:Store=Depends(store)):
+    return s.gpu_command(job,action)
+
 @router.delete("/requests/{job}",dependencies=[Depends(require_csrf)])
 def delete(job:str,s:Store=Depends(store)):
     with s.admission():
