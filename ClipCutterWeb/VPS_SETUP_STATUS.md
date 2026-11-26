@@ -73,14 +73,24 @@ This is a proposed entrypoint/runtime contract, not proof that run.py, a release
 
 ## DNS and TLS
 
-DNS resolves correctly on the VPS. Certbot inventory showed existing certificates for app.scenebuilder.online (expires 2027-01-16 UTC) and concat.scenebuilder.online (expires 2027-02-16 UTC), both valid at inspection. No certificate for clip.scenebuilder.online was listed. External DNS/ACME reachability and certificate issuance remain unverified. No Nginx config modification, certificate issuance or public cutover was performed.
+DNS resolves correctly on the VPS. Existing certificates for app.scenebuilder.online and concat.scenebuilder.online were valid at initial inspection. A separate ClipCutter certificate was successfully issued and verified on 2026-11-26.
+
+- Nginx HTTP-only ACME site created at `/etc/nginx/sites-available/clipcutter-web`, enabled via `/etc/nginx/sites-enabled/clipcutter-web`. Syntax check and reload succeeded.
+- Port 80 serves `/.well-known/acme-challenge/` from `/var/www/clipcutter-acme`; other requests return 404. Preserve the challenge location during future HTTPS cutover.
+- Issuance command: `sudo certbot certonly --webroot -w /var/www/clipcutter-acme --cert-name clip.scenebuilder.online -d clip.scenebuilder.online`.
+- Verified certificate name and domain: clip.scenebuilder.online; ECDSA; expiry 2027-02-24 11:38:54 UTC.
+- Certificate: `/etc/letsencrypt/live/clip.scenebuilder.online/fullchain.pem`; private key: `/etc/letsencrypt/live/clip.scenebuilder.online/privkey.pem`. Never copy key contents into Git.
+- Certbot reported scheduled automatic renewal. Renewal dry-run and future Nginx reload behavior have not been verified.
+- Public HTTPS, TLS reverse proxy and backend deployment remain pending. Recheck existing services and Nginx health after changes; no post-issuance Concat health output was supplied.
+
+Do not request a duplicate certificate unnecessarily. Reuse the existing valid certificate at guarded HTTPS cutover.
 
 ## Remaining work (not completed)
 
 1. Implement and test the standalone ClipCutterWeb application, Dashboard, Admin & Security, two processing tabs, queue and worker integration per approved scope.
 2. Implement and review ClipCutter-specific guarded deployment helper, bootstrap, release staging and rollback. Proposed helper path: /usr/local/sbin/clipcutter-web-deploy. Do not reuse or invoke Concat's helper. No helper was installed during VPS preparation.
 3. Verify exact approved main SHA, source-level tests, archive digest, host capacity, free port and existing service health; stage only ClipCutterWeb under /srv/clipcutter-web/releases/<SHA>. Preserve persistent data and use verified atomic current symlink, independent admin initialization, health identity and anonymous access denial. Enable/start only when the reviewed release procedure allows it.
-4. After successful loopback verification, perform separate guarded Nginx reverse proxy and HTTPS cutover, using a dedicated certificate and site configuration for clip.scenebuilder.online. Validate DNS, ACME, nginx -t, public HTTPS and existing sites. Roll back only ClipCutter changes on failure.
+4. After successful loopback verification, perform separate guarded Nginx reverse proxy and HTTPS cutover, using the already issued dedicated certificate and updating only the ClipCutter site configuration. Preserve the HTTP ACME challenge, verify certificate validity and renewal, nginx -t, public HTTPS and existing sites. Roll back only ClipCutter changes on failure.
 5. Verify worker and queue behavior independently before production GPU usage.
 
 No EXE build, GitHub Actions build/deploy workflow, remote SSH automation, changes to existing Concat/Scene services, or paid GPU provisioning are authorized by this record. Basic VPS preparation complete; application deployment and public activation pending.
