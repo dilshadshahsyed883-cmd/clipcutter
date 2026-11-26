@@ -41,17 +41,11 @@ def references(root, hashes, cancel):
     return result
 
 def engine():
-    # No implicit downloader or default unlicensed model pack.
-    if os.environ.get("CLIPCUTTER_MODEL_LICENSE_CONFIRMED") != "1":
-        raise RuntimeError("Operator must provision compatible licensed detector and recognizer weights")
+    # Verify packaged PC weights; no separate runtime license flag or download.
     from .vendor.face_engine import InsightFaceEngine
-    from .vendor.downloads import find_face_models
-    model_dir=find_face_models()
-    if model_dir is None:
-        raise RuntimeError("Worker model directory is missing required files")
     from worker.runtime import require_models
-    require_models(cancel=None)
-    instance=InsightFaceEngine(model_dir, use_gpu=os.environ.get("CLIPCUTTER_USE_GPU","1")=="1")
+    model_dir=require_models()
+    instance=InsightFaceEngine(model_dir,use_gpu=True)
     status=instance.status()
     if not status.available:
         raise RuntimeError(status.detail)

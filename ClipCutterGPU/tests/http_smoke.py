@@ -17,6 +17,7 @@ assert data=={"ok":True,"service":"clipcutter-gpu"}
 assert get("/api/capabilities")[0]==401
 code,data=get("/api/capabilities",os.environ["SMOKE_TOKEN"])
 assert code==200 and data["source_sha"]==os.environ["EXPECTED_SOURCE_SHA"]
-assert data["contract_version"]==1 and data["dispatch_enabled"] is False and data["ready"] is False
+assert data["contract_version"]==2 and data["dispatch_enabled"] is False and data["ready"] is False
+assert data["transport"]=="verified-chunks-v1" and data["active_renders"]==0
 assert get("/health/ready")[0]==503
 print("ENTRYPOINT_SMOKE=PASS (no physical GPU tested)")
