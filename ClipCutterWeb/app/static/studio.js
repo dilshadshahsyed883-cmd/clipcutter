@@ -290,9 +290,9 @@
        else{
          const gpuAction=(name,action)=>button(name,async()=>{try{await api("/requests/"+job.id+"/gpu/"+action,"POST");status.textContent="GPU "+action+" requested";await refresh();}catch(err){status.textContent=err.message;}});
          if(job.state==="ready"&&(!job.gpu_phase||["new","create_intent","staging","start_intent"].includes(job.gpu_phase))||job.state==="processing"&&["start_intent","processing"].includes(job.gpu_phase))actions.append(gpuAction("Cancel GPU","cancel"));
-         if(job.state==="failed"&&job.gpu_phase==="failed")actions.append(gpuAction("Retry GPU","retry"));
+         if(job.state==="failed"&&["failed","failed_clean"].includes(job.gpu_phase))actions.append(gpuAction("Retry GPU","retry"));
        }
-       if(!job.gpu_command&&!gpuUploading&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
+       if(!job.gpu_command&&!gpuUploading&&(!job.gpu_phase||["acknowledged","failed_clean","cancelled_clean"].includes(job.gpu_phase))&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
          const remove=button(deleting.has(job.id)?"Deleting…":"Delete",async()=>{
            if(deleting.has(job.id)||deleted.has(job.id))return;
            deleting.add(job.id);remove.disabled=true;remove.textContent="Deleting…";
