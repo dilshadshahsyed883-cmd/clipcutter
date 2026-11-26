@@ -170,8 +170,8 @@ class Scheduler:
             if pipeline or not self.flights:
                 uploading=next((x for x in active if x["phase"] in upload_phases and not x["command"]),None)
                 if uploading:
-                    if available(uploading):launch("upload",uploading,admit=admit)
-                elif admit and matched and (pipeline or not active):
+                    if available(uploading):launch("upload",uploading,admit=admit and matched)
+                elif admit and matched and (pipeline or not active) and not any(x["phase"] in upload_phases for x in active):
                     # Max one preloaded job beyond render slots; bound output backlog.
                     outstanding=sum(x["phase"] in observe_phases|upload_phases for x in active)
                     backlog=sum(x["phase"] in output_phases for x in active)
