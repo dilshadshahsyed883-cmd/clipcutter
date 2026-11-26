@@ -18,4 +18,6 @@ jobs:
       - name: Verify web source
         run: bash ClipCutterWeb/deploy/test-source.sh
       - name: Verify browser script syntax
-        run: node --check ClipCutterWeb/app/static/gpu.js
+        run: |
+          node --check ClipCutterWeb/app/static/gpu.js
+          node --check ClipCutterWeb/app/static/studio.js
