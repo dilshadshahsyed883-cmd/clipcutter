@@ -8,12 +8,11 @@ from core.downloads import tool_path
 def find_node():
     exe=shutil.which('node')
     if exe:return exe
-    for p in [root()/'runtime/node/node.exe',Path(os.environ.get('ProgramFiles','C:/Program Files'))/'nodejs/node.exe']:
+    for p in [Path(os.environ.get('ProgramFiles','C:/Program Files'))/'nodejs/node.exe']:
         if p.is_file():return str(p)
     from . import bootstrap_node
-    bootstrap_node.ROOT=root()
     # Keep the original checksum-verified bootstrap; use the application data directory.
-    dest=bootstrap_node.install()
+    dest=bootstrap_node.install(root())
     return str(dest/'node.exe')
 
 def probe(path):
