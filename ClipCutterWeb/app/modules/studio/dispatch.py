@@ -201,20 +201,28 @@ class Dispatcher:
                 if row["phase"] in ("start_intent","processing","delivering","published"):
                     raise DispatchError("Remote reverted to staging; reconcile")
                 self._phase(jid,"staging")
+                offsets=remote.get("uploaded")
+                if not isinstance(offsets,dict):raise DispatchError("Invalid remote offsets")
+                total=sum(item["size"] for item in m["files"].values())
+                for name,item in m["files"].items():
+                    offset=offsets.get(name)
+                    if type(offset) is not int or not 0<=offset<=item["size"]:raise DispatchError("Invalid remote offset")
+                acknowledged=sum(offsets[name] for name in m["files"])
+                self.store.gpu_upload_progress(jid,acknowledged,total)
                 if not allow_start:return "paused"
                 with self.store.connect() as c:
                     if self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
                 for name,item in m["files"].items():
-                    offset=remote["uploaded"].get(name)
-                    if type(offset) is not int or not 0<=offset<=item["size"]:raise DispatchError("Invalid remote offset")
+                    offset=offsets[name]
                     if offset<item["size"]:
                         path=root/mapping[name]
                         if path.resolve()!=path or not path.is_file() or path.stat().st_size!=item["size"]:raise DispatchError("Staged input changed")
                         with path.open("rb") as f:f.seek(offset);chunk=f.read(min(CHUNK,item["size"]-offset))
                         if not chunk:raise DispatchError("Staged input truncated")
                         result=self.client.put(a,name,offset,chunk)
-                        if result.get("offset")!=offset+len(chunk):raise DispatchError("Unexpected upload acknowledgement")
+                        if type(result.get("offset")) is not int or result["offset"]!=offset+len(chunk):raise DispatchError("Unexpected upload acknowledgement")
+                        self.store.gpu_upload_progress(jid,acknowledged+len(chunk),total)
                         return "staging"
                 if caps.get("active_renders")!=0:return "gpu_busy"
                 with self.store.connect() as c:

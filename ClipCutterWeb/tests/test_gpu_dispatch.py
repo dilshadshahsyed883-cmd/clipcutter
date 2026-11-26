@@ -73,6 +73,37 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(self.client.purges,1)
         self.assertEqual(self.client.creates,1)
         self.assertEqual(self.store.output_path(self.jid,"analysis.json")[0].read_bytes(),OUT)
+    def test_gpu_upload_progress_tracks_acknowledged_bytes_across_restart(self):
+        def put(a,n,offset,data):
+            self.assertEqual(data,VIDEO[offset:offset+len(data)])
+            self.client.remote["uploaded"][n]=offset+len(data)
+            return {"offset":offset+len(data)}
+        with patch("app.modules.studio.dispatch.CHUNK",5),patch.object(self.client,"put",side_effect=put):
+            self.assertEqual(self.dispatch.tick(self.jid),"staging")
+            job=self.store.get(self.jid)
+            self.assertEqual(job["state"],"ready")
+            self.assertEqual(job["progress"],500//len(VIDEO))
+            self.assertIn("5 / ",job["message"])
+            restarted=Dispatcher(self.store,self.client)
+            self.assertEqual(restarted.tick(self.jid,allow_start=False),"paused")
+            self.assertEqual(self.store.get(self.jid)["progress"],500//len(VIDEO))
+            self.assertEqual(restarted.tick(self.jid),"staging")
+            self.assertEqual(self.store.get(self.jid)["progress"],1000//len(VIDEO))
+            self.assertEqual(self.client.creates,1)
+            while self.client.remote["uploaded"]["source.video"]<len(VIDEO):
+                self.assertEqual(restarted.tick(self.jid),"staging")
+            self.assertEqual(self.store.get(self.jid)["progress"],100)
+            self.assertEqual(restarted.tick(self.jid),"running")
+            self.assertEqual(self.store.get(self.jid)["state"],"processing")
+            self.assertEqual(self.store.get(self.jid)["progress"],0)
+
+    def test_gpu_upload_bad_ack_does_not_advance_progress(self):
+        with patch.object(self.client,"put",return_value={"offset":1}):
+            with self.assertRaisesRegex(DispatchError,"Unexpected upload acknowledgement"):
+                self.dispatch.tick(self.jid)
+        self.assertEqual(self.store.get(self.jid)["progress"],0)
+        self.assertEqual(self.client.starts,0)
+
     def test_all_intake_barrier(self):
         self.store.create(request("b"*32))
         with self.assertRaisesRegex(DispatchError,"pending Drive intake"):self.dispatch.tick(self.jid)
