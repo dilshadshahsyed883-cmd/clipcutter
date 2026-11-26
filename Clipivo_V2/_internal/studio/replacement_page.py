@@ -1,7 +1,7 @@
 import json,copy,uuid
 from pathlib import Path
 import cv2
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QTimer
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QSplitter,QLabel,QPushButton,QFileDialog,QTableWidget,QTableWidgetItem,QComboBox,QDoubleSpinBox,QFormLayout,QDialog,QDialogButtonBox,QMessageBox,QInputDialog,QHeaderView
 from v22.analyzer import atomic_json
 from .storage import root
@@ -13,7 +13,7 @@ from .render import reconstruct
 
 class ReplacementPage(QWidget):
     def __init__(self,window):
-        super().__init__();self.window=window;self.reference=None;self.plan=None;self.index=Index();self.operation='';self.saved_plan=None
+        super().__init__();self.window=window;self.reference=None;self.plan=None;self.index=Index();self.operation='';self.saved_plan=None;self._active=False
         self.task=Task(self);self.task.done.connect(self.done);self.task.failed.connect(self.error);self.task.progress.connect(self.progress);self.task.finished.connect(self.finished)
         l=QVBoxLayout(self);bar=QHBoxLayout();l.addLayout(bar);self.actions=[]
         for text,slot in [('Reference video',self.open_reference),('Index footage folder',self.index_folder),('Footage labels',self.labels),('Use analyzer identities',self.import_identities),('Match scenes',self.match),('Pick / rearrange clips',self.pick_clips),('Open plan',self.open_plan),('Save plan',self.save_plan)]:self.actions.append(button(text,slot,bar))
@@ -29,13 +29,24 @@ class ReplacementPage(QWidget):
         for name,value in [('identity',4),('activity',2),('visual',2),('framing',1),('duration',1),('aspect',1)]:
             weights.addWidget(QLabel(name.title()));spin=QDoubleSpinBox();spin.setRange(0,10);spin.setValue(value);spin.setSingleStep(.5);weights.addWidget(spin);self.weights[name]=spin
         self.status=QLabel('* Similarity score is a ranking, not a calibrated confidence. Hard cuts and visual histograms are estimates; semantic labels require review.');self.status.setWordWrap(True);l.addWidget(self.status)
+    @property
+    def busy(self):return self._active or self.task.busy
     def run(self,operation,fn):
-        if self.task.busy:return
-        self.operation=operation
+        if self.busy:return
+        self._active=True;self.operation=operation
         for a in self.actions:a.setEnabled(False)
-        self.cancel.setEnabled(True);self.task.start(fn)
+        self.table.setEnabled(False);self.candidates.setEnabled(False)
+        for w in self.weights.values():w.setEnabled(False)
+        self.cancel.setEnabled(True);self.status.setText(operation+'…')
+        try:self.task.start(fn)
+        except Exception as exc:self.finished();self.error(str(exc))
     def finished(self):
+        if self.task.busy:
+            QTimer.singleShot(20,self.finished);return
+        self._active=False
         for a in self.actions:a.setEnabled(True)
+        self.table.setEnabled(True);self.candidates.setEnabled(True)
+        for w in self.weights.values():w.setEnabled(True)
         self.cancel.setEnabled(False)
     def progress(self,args):
         a,b=args[:2];self.status.setText(f'{self.operation}: {a:.1f} / {b:.1f} ({100*a/max(.001,b):.1f}%)')
@@ -55,6 +66,8 @@ class ReplacementPage(QWidget):
                 for scene in result['scenes']:self.link_scene_people(scene,a.data)
             self.heading.setText(Path(result['path']).name+f"  •  {len(result['scenes'])} estimated scenes  •  {result['duration']:.2f}s");self.populate();self.show_video(self.original,result['path'],0)
         elif self.operation in ('Match scenes','Pick clips'):
+            if self.task.stop.is_set():
+                self.status.setText('Cancelled; previous plan preserved.');return
             self.plan=result;self.populate()
             self.status.setText('Timeline created; approve each clip. '+ ' '.join(result.get('warnings',[])))
         elif self.operation=='Index footage':self.status.setText(f'Index saved: {len(result)} videos. Unchanged videos reuse cached descriptors. Add identity/activity/framing labels before matching.')
@@ -95,7 +108,7 @@ class ReplacementPage(QWidget):
             if not 0<kwargs['clip_minimum']<=kwargs['clip_maximum']:return self.error('Invalid clip duration limits.')
         reference=copy.deepcopy(self.reference)
         def work(task):
-            media=Index().all()
+            media=Index().all(task.stop.is_set)
             if not media:raise ValueError('Index footage first.')
             return build_plan(reference,media,weights,**kwargs,cancel=task.stop.is_set)
         self.run('Match scenes',work)
@@ -280,7 +293,7 @@ class ReplacementPage(QWidget):
             reference=copy.deepcopy(self.reference)
             save_settings({'picker':dict(options,group_weights=group_weights)})
             def work(task):
-                media=Index().all()
+                media=Index().all(task.stop.is_set)
                 if not media:raise ValueError('Index footage first.')
                 return build_picked_plan(reference,media,**options,group_weights=group_weights or None,cancel=task.stop.is_set)
             self.run('Pick clips',work)
