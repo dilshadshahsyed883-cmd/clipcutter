@@ -58,11 +58,23 @@ class ReplacementPage(QWidget):
         elif self.operation=='CapCut':self.status.setText('Editable draft verified: '+result['folder']+'  •  Open it from CapCut Home → Projects.'+(' CapCut launched.' if result.get('launched') else ' Start CapCut manually.'))
         elif self.operation=='Render':self.status.setText('Validated reconstruction saved: '+str(result))
     @staticmethod
-    def link_scene_people(scene,data):
+    def link_scene_people(scene,data,source_footage=False):
         groups=[g for g in data['people'] if not g.get('ignored') and not g.get('filtered') and any(x<scene['end'] and y>scene['start'] for x,y in g['segments'])]
         confirmed={str(g['library_id']) for g in groups if g.get('library_id')}
         unknown={f"unknown:{data['source']}:{g['id']}" for g in groups if not g.get('library_id')}
         scene['people']=sorted(confirmed|unknown)
+        if source_footage:
+            # A partial appearance does not establish identity for the full source trim.
+            covered=set()
+            for identity in confirmed:
+                at=scene['start']
+                intervals=sorted((x,y) for g in groups if str(g.get('library_id'))==identity for x,y in g['segments'])
+                for x,y in intervals:
+                    if x>at+1e-6:break
+                    at=max(at,y)
+                    if at>=scene['end']-1e-6:
+                        covered.add(identity);break
+            confirmed=covered
         scene['confirmed_people']=sorted(confirmed)
 
     def match(self):
@@ -156,7 +168,7 @@ class ReplacementPage(QWidget):
             if sel.get('manual'):sel['confirmed_people']=[]  # A changed manual trim requires fresh confirmation.
             self.update_row()
     def edit_labels(self,scene):
-        d=QDialog(self);d.setWindowTitle('Scene labels: use the same person IDs across videos');l=QFormLayout(d);fields={}
+        d=QDialog(self);d.setWindowTitle('Confirm scene labels: same IDs across videos; people must cover the entire source scene');l=QFormLayout(d);fields={}
         from PySide6.QtWidgets import QLineEdit
         for key in ['people','activity','environment','framing','angle']:
             v=', '.join(scene.get(key,[])) if key=='people' else scene.get(key,'');w=QLineEdit(v);fields[key]=w;l.addRow(key.title(),w)
@@ -204,6 +216,8 @@ class ReplacementPage(QWidget):
             Path(p).write_text(text or 'All scenes approved.',encoding='utf-8');self.status.setText('Report saved: '+p)
     def render(self):
         if not self.plan or any(not r.get('approved') or not r.get('selected') for r in self.plan['rows']):return self.error('Review and approve every scene before rendering.')
+        try:expand_plan(self.plan)
+        except (ValueError,KeyError,TypeError) as e:return self.error(str(e))
         d=QDialog(self);d.setWindowTitle('Reconstruct video');l=QFormLayout(d);audio=QComboBox();audio.addItems(['Original audio','No audio','Separate audio file']);l.addRow('Audio',audio);encoder=QComboBox();encoder.addItems(['libx264','h264_nvenc']);l.addRow('Encoder',encoder)
         resolution=QComboBox();resolution.addItems(['Original','1920 × 1080','1080 × 1920','1280 × 720']);l.addRow('Canvas (fit + pad)',resolution);fps=QDoubleSpinBox();fps.setRange(1,240);fps.setDecimals(3);fps.setValue(self.reference['fps']);l.addRow('Frames / second',fps)
         box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);box.accepted.connect(d.accept);box.rejected.connect(d.reject);l.addRow(box)
@@ -273,5 +287,5 @@ class ReplacementPage(QWidget):
                 self.status.setText('Reference identities updated. Match scenes again.');return
         if m is None:return self.error('This analyzed video is not in the footage index yet.')
         for scene in m['scenes']:
-            self.link_scene_people(scene,a.data)
+            self.link_scene_people(scene,a.data,source_footage=True)
         self.index.save(m);self.status.setText('Analyzer identities linked. Unmatched people require manual confirmation.')
