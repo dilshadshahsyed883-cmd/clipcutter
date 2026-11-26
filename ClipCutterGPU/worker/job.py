@@ -29,8 +29,10 @@ class Staged(BaseModel):
     def check(self):
         if any(not re.fullmatch(r"[a-f0-9]{64}",x) for x in self.references_sha256):
             raise ValueError("Invalid staged reference digest")
-        if bool(self.request.settings.reference_link)!=bool(self.references_sha256):
+        if bool(self.request.settings.reference_link or self.request.settings.reference_uploads)!=bool(self.references_sha256):
             raise ValueError("Reference staging differs from request")
+        if self.request.settings.reference_uploads and self.request.settings.reference_uploads!=self.references_sha256:
+            raise ValueError("Uploaded reference digest mismatch")
         if isinstance(self.request.settings,Analyzer) and self.references_sha256:
             raise ValueError("Analyzer reference-profile input awaits explicit profile integration")
         return self

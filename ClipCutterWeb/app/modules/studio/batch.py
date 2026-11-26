@@ -83,7 +83,7 @@ def expand(store,parent,root,manifest):
     refs=[x for x in manifest if x["role"]=="reference"]
     if len(refs)>12 or any(not 0<x["size"]<=MAX_REFERENCE for x in refs):
         raise RuntimeError("Batch reference count or size limit exceeded")
-    if bool(job["settings"].get("reference_link"))!=bool(refs):raise RuntimeError("Batch reference mismatch")
+    if bool(job["settings"].get("reference_link") or job["settings"].get("reference_uploads"))!=bool(refs):raise RuntimeError("Batch reference mismatch")
     for x in manifest:
         if not re.fullmatch(r"(?:source|reference)-[0-9]{4}\.[a-z0-9]+",x["file"]):raise RuntimeError("Unsafe batch filename")
         p=root/x["file"]
@@ -166,5 +166,5 @@ def members(store,parent):
         store.row(c,parent)
         if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='batch_members'").fetchone():return []
         rows=c.execute("""SELECT b.ordinal,b.label,r.* FROM batch_members b JOIN requests r ON r.id=b.child_id
-                         WHERE b.parent_id=? AND r.owner=? ORDER BY b.ordinal""",(parent,store.owner)).fetchall()
+                         WHERE b.parent_id=? AND r.owner=? AND r.state!='deleted' ORDER BY b.ordinal""",(parent,store.owner)).fetchall()
         return [{**store.public(x),"ordinal":x["ordinal"],"label":x["label"]} for x in rows]
