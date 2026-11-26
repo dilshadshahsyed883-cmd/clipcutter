@@ -17,7 +17,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 if [[ "${GITHUB_ACTIONS:-}" == true && "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
   [[ "${GITHUB_SHA:-}" == "$SHA" ]] || { echo "PR checkout mismatch"; exit 1; }
 else
-  [[ "$(git ls-remote --exit-code "$REPO" refs/heads/main | awk '{print $1}')" == "$SHA" ]] || { echo "Approved SHA must match remote main"; exit 1; }
+  bash "$ROOT/ClipCutterGPU/check-main-gpu-tree.sh" "$SHA" "$REPO"
 fi
 [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || { echo "Clean checkout required"; exit 1; }
 for c in docker python3 openssl; do command -v "$c" >/dev/null; done

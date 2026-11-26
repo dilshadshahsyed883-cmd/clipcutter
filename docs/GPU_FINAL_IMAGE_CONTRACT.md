@@ -22,3 +22,7 @@ redistribution rights as verified. Private package verification, pinned model
 hashes, all smoke gates, immutable tags and digest verification remain required.
 This supersedes historical build-disabled statements for this testing build.
 No Salad start, paid GPU usage, Concat changes, EXE or VPS deployment.
+
+## Independent release rule (latest)
+
+The exact main SHA at manual dispatch remains the image revision and immutable tag. Current-main full commit equality is no longer required during the build or publication. Instead verify the pinned `ClipCutterGPU/` tree against the latest fetched main GPU tree. Web-only changes outside that directory may merge without invalidating the image; a changed GPU tree fails closed and requires a new approved build. Existing dispatched workflows retain their original logic. No change to private package, model, smoke, digest or deployment gates.

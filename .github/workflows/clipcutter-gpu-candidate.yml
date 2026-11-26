@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       approved_sha:
-        description: Reviewed exact current main commit SHA
+        description: Reviewed exact main commit SHA at dispatch (GPU tree pinned)
         type: string
         required: true
       private_educational_approved:
@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$IMAGE" = "ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:$GITHUB_SHA"
-          test "$(git ls-remote --exit-code https://github.com/dilshadshahsyed883-cmd/clipcutter.git refs/heads/main | awk '{print $1}')" = "$GITHUB_SHA"
+          bash ClipCutterGPU/check-main-gpu-tree.sh "$GITHUB_SHA" https://github.com/dilshadshahsyed883-cmd/clipcutter.git
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           # Do not overwrite a published tag. Only a definitive registry not-found permits push.
@@ -80,6 +80,8 @@ jobs:
           fi
           grep -Eiq 'manifest unknown|name unknown|no such manifest|manifest.*not found' "$REPORT/registry-check.txt" || { cat "$REPORT/registry-check.txt" >&2; exit 1; }
           python3 ClipCutterGPU/verify-private-package.py
+          # Recheck immediately before publish, not after a potentially long registry check.
+          bash ClipCutterGPU/check-main-gpu-tree.sh "$GITHUB_SHA" https://github.com/dilshadshahsyed883-cmd/clipcutter.git
           docker push "$IMAGE"
           python3 ClipCutterGPU/verify-private-package.py
           REFERENCE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"

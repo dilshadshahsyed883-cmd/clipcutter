@@ -56,3 +56,7 @@ redistribution rights or a commercial license. Enable only manual exact-main-SHA
 builds with explicit private educational approval; keep package-private checks,
 model hashes, all smoke tests, immutable tags and digest verification. No EXE,
 Concat changes, Salad starts or VPS deployment are authorized by this exception.
+
+## Latest owner rule — independent Web and GPU releases
+
+The approved manual GPU build remains pinned to the exact main commit at dispatch. Subsequent main updates outside `ClipCutterGPU/` do not cancel or invalidate that image build or publication. Compare the pinned `ClipCutterGPU` Git tree against current main before building and publishing; if GPU source differs, require renewed approval. Keep immutable original SHA tags, private package verification, model pins, smoke tests and digest checks. No automatic image rebuild on Web-only merge. Already dispatched runs use their original workflow; do not cancel them merely for a Web update. Web and GPU deployments remain separately authorized.
