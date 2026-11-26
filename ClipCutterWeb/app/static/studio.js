@@ -3,6 +3,7 @@
  let csrf=null, key=null, lastPayload=null, saving=false, refreshing=false, selected=null, seq=0, refsSelected=[], previewUrls=[];
  const status=$("studio-status");
  const extras=new Set();
+ form.addEventListener("invalid",e=>{const section=e.target.closest("details");if(section)section.open=true;},true);
  function setView(view){
    root.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view===view)));
    root.querySelectorAll("[data-panel]").forEach(p=>p.hidden=p.dataset.panel!==view||(p.hasAttribute("data-extra")&&!extras.has(p.id)));
@@ -128,6 +129,7 @@
  }
  async function showReview(job){
    const pane=$("review-panel"), rows=$("review-ranges"), note=$("review-status"), approve=$("review-approve");
+   selected=null;$("result-request").value="";$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a completed request to inspect its outputs.";
    extras.add("review-panel");setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
    const stamp=++seq;
    try{
