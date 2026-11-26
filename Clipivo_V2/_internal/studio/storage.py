@@ -90,12 +90,56 @@ class Profiles:
             obs=sorted(group['observations'],key=lambda x:-x['quality'])[:30]
             self._write(person.id,{'id':person.id,'embeddings':[o['embedding'] for o in obs]})
         return person.id
-    def entries(self,model_signature=None,engine=None,cancel=lambda:False):
+    def import_v22(self,library):
+        """Copy documented V2.2 People_Library/<id>/profile.json + images.
+        Never trust vectors from unknown models or merge different profiles by name.
+        """
+        if self.store is None:raise RuntimeError('People Library is locked.')
+        from core.character_store import IMAGE_EXTENSIONS
+        library=Path(library).resolve()
+        if not library.is_dir():raise ValueError('Choose the V2.2 People_Library folder.')
+        imported=[];skipped=[]
+        for profile in sorted(library.glob('*/profile.json')):
+            if not profile.resolve().is_relative_to(library):continue
+            try:
+                folder=profile.parent.resolve()
+                data=json.loads(profile.read_text(encoding='utf-8'))
+                name=data.get('name')
+                if not isinstance(name,str) or not name.strip():raise ValueError('No supported explicit profile name')
+                name=name.strip()
+                if any(c.name.casefold()==name.casefold() for c in self.store.characters()):
+                    skipped.append(f'{profile.parent.name}: name already exists; not merged')
+                    continue
+                files=[p for p in sorted(folder.rglob('*')) if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.resolve().is_relative_to(folder)]
+                if not files:raise ValueError('No reference images')
+                blobs=[(p.name,p.read_bytes()) for p in files]
+                if any(not blob for _,blob in blobs):raise ValueError('Empty reference image')
+                person=self.store.create_character(name)
+                try:
+                    from hashlib import sha256
+                    known=set()
+                    for filename,blob in blobs:
+                        digest=sha256(blob).hexdigest()
+                        if digest not in known:self.store.add_reference(person.id,filename,blob);known.add(digest)
+                except Exception:
+                    # Roll back only the profile created by this import.
+                    self.store.delete_character(person.id)
+                    raise
+                imported.append(person.id)
+            except (OSError,ValueError,RuntimeError,AttributeError) as exc:
+                skipped.append(f'{profile.parent.name}: {exc}')
+        return imported,skipped
+    def entries(self,model_signature=None,engine=None,cancel=lambda:False,warnings=None):
         if self.store is None:return []
+        warnings=warnings if warnings is not None else []
         result=[]
         for c in self.store.characters():
             if cancel():raise InterruptedError('Cancelled')
-            old=self._read(c.id)
+            cache_error=False
+            try:old=self._read(c.id)
+            except Exception as exc:
+                old={};cache_error=True
+                warnings.append(f'{c.name}: unreadable embedding cache preserved ({type(exc).__name__})')
             fingerprint=self.store.fingerprint(c.id)
             if model_signature is None:
                 # Compatibility for existing callers; analysis always supplies provenance.
@@ -108,18 +152,24 @@ class Profiles:
             if engine is None:continue
             import cv2,numpy as np
             embeddings=[]
-            for _,blob in self.store.iter_reference_bytes(c.id):
+            for ref in self.store.references(c.id):
                 if cancel():raise InterruptedError('Cancelled')
+                try:blob=self.store.reference_bytes(ref.id)
+                except Exception as exc:
+                    warnings.append(f'{c.name}: unreadable reference skipped ({type(exc).__name__})');continue
                 img=cv2.imdecode(np.frombuffer(blob,np.uint8),cv2.IMREAD_COLOR)
-                if img is None:continue
+                if img is None:
+                    warnings.append(f'{c.name}: invalid reference image skipped');continue
                 faces=engine.get(img)
                 # Multiple faces in an old reference cannot establish identity.
                 if len(faces)==1:embeddings.append(faces[0][0].tolist())
+                else:warnings.append(f'{c.name}: reference must contain exactly one detected face')
             if cancel():raise InterruptedError('Cancelled')
             if not embeddings:continue
             payload={'id':c.id,'embeddings':embeddings,'model_signature':model_signature,'fingerprint':fingerprint}
             # References may have been edited in the People Library during analysis.
             # Do not publish a stale fingerprint or reuse an obsolete identity.
             if self.store.fingerprint(c.id)!=fingerprint:continue
-            self._write(c.id,payload);result.append(dict(payload,name=c.name))
+            if not cache_error:self._write(c.id,payload)
+            result.append(dict(payload,name=c.name))
         return result
