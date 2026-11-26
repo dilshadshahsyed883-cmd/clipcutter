@@ -1,3 +1,7 @@
+# Extractor parity restoration — 26 November 2026
+
+Static source comparison against upstream v0.7.7: face_engine.py, face_models.py, video_analysis.py, ui/main_window.py, ui/settings_dialog.py and core/downloads.py are unchanged; the original model constructor and dependency pins are restored. Studio settings no longer assign the extractor model directory or invalidate its engine. AppData launcher checks the requirements hash and reconciles dependencies before startup if it changes. Optional strict clip limits and output safety guards remain. No Windows runtime, actual face inference or same-video parity result is claimed. No EXE build or workflow.
+
 # Verification record — combined integration checkpoint
 
 ## Current integration results (26 November 2026)

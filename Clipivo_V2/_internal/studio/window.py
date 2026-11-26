@@ -12,7 +12,7 @@ from .replacement_page import ReplacementPage
 class SettingsPage(QWidget):
     def __init__(self,window):
         super().__init__();self.window=window;cfg=load_settings();l=QVBoxLayout(self);l.addWidget(QLabel('Analysis settings'));form=QFormLayout();l.addLayout(form)
-        self.models=QLineEdit(cfg.get('models',''));row=QHBoxLayout();row.addWidget(self.models);button('Browse',self.browse,row);button('Auto detect',self.detect,row);form.addRow('Model folder',row)
+        self.models=QLineEdit(cfg.get('models',''));row=QHBoxLayout();row.addWidget(self.models);button('Browse',self.browse,row);button('Auto detect',self.detect,row);form.addRow('Person Analyzer model folder',row)
         limits=cfg.get('clip_limits',{})
         self.limits_on=QCheckBox('Apply min/max to extraction, batch and reference matching (extraction: accurate cutting; Whole picture)');self.limits_on.setChecked(limits.get('enabled',False));form.addRow(self.limits_on)
         self.clip_min=QDoubleSpinBox();self.clip_min.setDecimals(3);self.clip_min.setRange(.1,600);self.clip_min.setValue(limits.get('minimum',2.5));form.addRow('Minimum clip seconds',self.clip_min)
@@ -23,7 +23,7 @@ class SettingsPage(QWidget):
         self.threshold=QDoubleSpinBox();self.threshold.setDecimals(2);self.threshold.setRange(.1,.95);self.threshold.setSingleStep(.05);self.threshold.setValue(cfg.get('threshold',.45));form.addRow('Grouping cosine threshold',self.threshold)
         self.size=QComboBox();self.size.addItems(['320','640','960','1280']);self.size.setCurrentText(str(cfg.get('size',640)));form.addRow('Detector resolution',self.size)
         self.capcut_drafts=QLineEdit(cfg.get('capcut_drafts',''));row=QHBoxLayout();row.addWidget(self.capcut_drafts);button('Browse',self.browse_drafts,row);form.addRow('CapCut drafts folder (blank = auto)',row)
-        self.notice=QLabel('Default InsightFace buffalo_l models: non-commercial research use. Commercial use needs separately licensed weights. This build supports compatible ONNX file replacement; it does not bundle model weights.\n\nFace models are reused from your Clipivo installation when compatible. The original installed application remains independent.\n\nGPU choice follows the installed ONNX Runtime provider: Windows DirectML by default; CUDA requires the compatible GPU runtime and drivers. GPU utilization is not reported unless measured.');self.notice.setWordWrap(True);l.addWidget(self.notice)
+        self.notice=QLabel('Default InsightFace buffalo_l models: non-commercial research use. Commercial use needs separately licensed weights. This build supports compatible ONNX file replacement; it does not bundle model weights.\n\nPerson Analyzer can reuse compatible models or use its own licensed weights. Clip Extractor and Batch independently use the original Clipivo verified model discovery. Their recognition controls are in Extraction / media settings.\n\nGPU choice follows the installed ONNX Runtime provider: Windows DirectML by default; CUDA requires the compatible GPU runtime and drivers. GPU utilization is not reported unless measured.');self.notice.setWordWrap(True);l.addWidget(self.notice)
         row=QHBoxLayout();l.addLayout(row);button('Save analysis settings',self.save,row);button('Extraction / media settings',lambda:window.open_settings(),row);button('Open data folder',self.open_data,row);l.addStretch()
         button('Import V2.2 People Library',self.import_legacy,l)
     def browse_drafts(self):
@@ -50,10 +50,7 @@ class SettingsPage(QWidget):
             if not ok:return QMessageBox.warning(self,'Model verification','Default weights failed checksum verification. Clear the folder for automatic discovery, or choose verified weights.')
         save_settings({'clip_limits':dict(enabled=self.limits_on.isChecked(),minimum=self.clip_min.value(),maximum=self.clip_max.value())})
         save_settings(dict(capcut_drafts=self.capcut_drafts.text(),models=self.models.text(),custom_models=self.custom.isChecked(),gpu=self.gpu.isChecked(),step=self.step.value(),threshold=self.threshold.value(),size=int(self.size.currentText())))
-        # Reuse selected model folder in upstream extraction as well.
-        self.window.face_engine.model_dir=chosen
-        self.window.face_engine._application=None
-        self.window.wide_face_engine=None
+        # Analyzer settings must never override the upstream extractor's model engine.
         QMessageBox.information(self,'Settings','Settings saved for future analyses.')
     def import_legacy(self):
         if self.window._video_job_running() or self.window.batch_page.is_running():return QMessageBox.warning(self,'People Library','Finish active work before importing profiles.')

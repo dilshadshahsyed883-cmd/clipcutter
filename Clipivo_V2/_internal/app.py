@@ -258,11 +258,9 @@ def main() -> int:
         store = CharacterStore()
     except CharacterStoreError as exc:
         store_error = str(exc)
-    from studio.storage import load_settings
-    cfg = load_settings()
-    from v22.model_locator import find_models
-    found = find_models(cfg.get("models"))
-    face_engine = InsightFaceEngine(found)
+    # Preserve upstream extractor model discovery and checksum verification.
+    # Studio analysis resolves its own configured models independently.
+    face_engine = InsightFaceEngine()
     window = MainWindow(PROJECT_DIR, store, face_engine, store_error)
     window.show()
     QTimer.singleShot(0, lambda: first_launch_checks(window))

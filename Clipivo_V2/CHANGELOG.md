@@ -1,3 +1,9 @@
+# V2.3 extractor parity restoration — 26 November 2026
+
+- Restore original v0.7.7 checksum-verified model discovery for Clip Extractor and Batch; isolate Person Analyzer model settings.
+- Restore original upstream runtime pins, retain psutil for Studio, and reconcile existing AppData environments when requirements change.
+- Preserve original face/scan UI and matching code, optional clip limits, existing data and all six tabs. Source-level verification only; actual Windows inference parity pending.
+
 # V2.3 source runtime policy — 26 November 2026
 
 - Enforce the existing LocalAppData source runtime path; stop if LOCALAPPDATA is unset and suppress application bytecode cache writes during source launch.
