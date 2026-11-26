@@ -14,7 +14,7 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
             g['name']='Person (review)'
         g['identity_status']='uncertain' if previous=='uncertain' else 'unknown'
         if g.get('ignored') or g.get('filtered') or previous=='uncertain': continue
-        embs=[o.get('embedding') for o in g['observations'] if o.get('embedding')]
+        embs=[o.get('embedding') for o in g['observations'] if o.get('embedding') is not None]
         if not embs: continue
         try: center=unit(np.mean([unit(e) for e in embs],axis=0))
         except (ValueError,TypeError): continue
@@ -53,10 +53,12 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
     for g in data['people']:g.pop('match_candidate',None)
     return data
 
-def run(video,folder,models,cfg,progress,cancel,live,profiles):
-    data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}))
+def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
+    data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}),engine=engine,persist=False)
+    if cancel():raise InterruptedError('Cancelled; no completed project saved')
     match_profiles(data,profiles);data['studio_version']='2.3'
     if cfg.get('model_signature'):data['model_signature']=cfg['model_signature']
+    if cancel():raise InterruptedError('Cancelled; no completed project saved')
     save_project(folder,data);return data
 
 def open_project(path):
