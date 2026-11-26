@@ -74,13 +74,15 @@ class Index:
     def save(self,media):
         with self.connect() as db:db.execute('UPDATE media SET payload=? WHERE path=?',(json.dumps(media),media['path']))
 
-def scene_candidates(scene,reference,media,weights=None,used=None,minimum=.70,allow_short=False):
+def scene_candidates(scene,reference,media,weights=None,used=None,minimum=.70,allow_short=False,cancel=lambda:False):
     weights=weights or dict(identity=4,activity=2,visual=2,framing=1,duration=1,aspect=1)
     used=used or {};out=[]
     target_people=set(scene.get('people',[]));target_len=scene['end']-scene['start']
     for video in media:
+        if cancel():raise InterruptedError('Scene matching cancelled')
         if video['path']==reference['path']:continue
         for n,s in enumerate(video['scenes']):
+            if cancel():raise InterruptedError('Scene matching cancelled')
             available=s['end']-s['start']
             if available<=0 or (not allow_short and available+1e-6<target_len):continue
             # Explicitly labelled people are a hard eligibility constraint.
@@ -97,18 +99,19 @@ def scene_candidates(scene,reference,media,weights=None,used=None,minimum=.70,al
     out.sort(key=lambda c:-c['score'])
     return out if allow_short else out[:20]
 
-def build_plan(reference, media, weights=None, minimum=.70, clip_minimum=None, clip_maximum=None, min_speed=.67):
+def build_plan(reference, media, weights=None, minimum=.70, clip_minimum=None, clip_maximum=None, min_speed=.67,cancel=lambda:False):
     rows, used = [], {}
     for scene in reference['scenes']:
+        if cancel():raise InterruptedError('Scene matching cancelled')
         duration = scene['end']-scene['start']
-        choices = scene_candidates(scene,reference,media,weights,used,minimum)
+        choices = scene_candidates(scene,reference,media,weights,used,minimum,cancel=cancel)
         required = list(scene.get('people',[]))
         selected = None
         if clip_minimum is None or clip_minimum <= duration <= clip_maximum:
             if choices and choices[0]['score'] >= minimum:
                 selected = dict(choices[0],trim_start=choices[0]['start'],target_duration=duration,speed=1.)
         if selected is None:
-            selected = fill_same_people(scene,reference,media,minimum,min_speed,weights,used,clip_minimum,clip_maximum)
+            selected = fill_same_people(scene,reference,media,minimum,min_speed,weights,used,clip_minimum,clip_maximum,cancel=cancel)
         if selected:
             for p in selected.get('pieces') or [selected]:
                 key = (p['path'],p['scene'])
@@ -122,7 +125,7 @@ def build_plan(reference, media, weights=None, minimum=.70, clip_minimum=None, c
 
 
 def fill_same_people(scene,reference,media,minimum_score=.70,min_speed=.67,weights=None,used=None,
-                     clip_minimum=None,clip_maximum=None):
+                     clip_minimum=None,clip_maximum=None,cancel=lambda:False):
     """Allocate distinct, confirmed same-person footage at normal speed first."""
     if not scene.get('people') or not .67 <= min_speed <= 1:
         return None
@@ -137,13 +140,14 @@ def fill_same_people(scene,reference,media,minimum_score=.70,min_speed=.67,weigh
     hi = math.floor(clip_maximum*fps+1e-8) if clip_maximum is not None else total
     if not 0 < lo <= hi or total < lo:
         return None
-    candidates = scene_candidates(scene,reference,media,weights,used,allow_short=True)
+    candidates = scene_candidates(scene,reference,media,weights,used,allow_short=True,cancel=cancel)
     candidates = [c for c in candidates if c['score'] >= minimum_score]
     # Capacity-first ordering prevents a short, high-ranked clip from stranding a gap.
     for floor_speed in (1.,min_speed):
         eligible = [(c,min(hi,math.floor((c['end']-c['start'])*fps/floor_speed+1e-8))) for c in candidates]
         eligible = sorted((x for x in eligible if x[1] >= lo),key=lambda x:(-x[1],-x[0]['score'],x[0]['path'],x[0]['scene']))
         for count in range(1,len(eligible)+1):
+            if cancel():raise InterruptedError('Scene matching cancelled')
             chosen = eligible[:count]
             if count*lo > total or sum(cap for _,cap in chosen) < total:
                 continue
@@ -189,6 +193,7 @@ def expand_plan(plan, require_approval=True):
     if limits and not 0 < float(limits['minimum']) <= float(limits['maximum']):
         raise ValueError('Invalid clip limits')
     at = 0.
+    used_sources = set()
     for row in original_rows:
         original = row['original']
         start,end = float(original['start']),float(original['end'])
@@ -200,9 +205,15 @@ def expand_plan(plan, require_approval=True):
         if not sel:
             raise ValueError('Missing replacement footage')
         required = set(original.get('people',[])) | set(row.get('identity_required',[]))
+        if 'pieces' in sel and not sel['pieces']:
+            raise ValueError('Replacement pieces cannot be empty')
         pieces = sel.get('pieces') or [sel]
         t = start
         for n,p in enumerate(pieces):
+            if mode=='concat_picker' and limits and limits.get('allow_repeats') is False:
+                source_key=str(Path(p['path']).resolve())
+                if source_key in used_sources:raise ValueError('Source reuse is disabled; repeated source file')
+                used_sources.add(source_key)
             if required and not required.issubset(set(p.get('confirmed_people',[]))):
                 raise ValueError('Same-person identity is unconfirmed; manual review required')
             target = float(p.get('target_duration',end-start if len(pieces)==1 else 0))
