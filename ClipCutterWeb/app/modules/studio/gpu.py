@@ -57,8 +57,8 @@ class GPUUpdate(GPUSettings):
 
     @field_validator("salad_key", "worker_key")
     @classmethod
-    def validate_secret(cls, value):
-        if value and (len(value) < 16 or any(ord(c) < 33 or ord(c) > 126 for c in value)):
+    def validate_secret(cls, value, info):
+        if value and (len(value) < (32 if info.field_name == "worker_key" else 16) or any(ord(c) < 33 or ord(c) > 126 for c in value)):
             raise ValueError("Invalid credential")
         return value
 
