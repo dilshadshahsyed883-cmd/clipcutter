@@ -63,10 +63,11 @@ class Index:
                 with self.connect() as db:db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?)',(str(path.resolve()),key,json.dumps(data)))
             done+=1;progress(done,len(paths))
         return self.all()
-    def all(self):
+    def all(self,cancel=lambda:False):
         result=[]
         with self.connect() as db:
             for path,key,payload in db.execute('SELECT path,fingerprint,payload FROM media ORDER BY path'):
+                if cancel():raise InterruptedError('Footage lookup cancelled')
                 try:
                     if fingerprint(path)==key:result.append(json.loads(payload))
                 except OSError:continue
