@@ -10,7 +10,7 @@
    if(view!=="results")$("output-preview").pause();
  }
  root.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>setView(b.dataset.view));
- $("result-request").onchange=()=>{const id=$("result-request").value;if(id)showOutputs(id);else{selected=null;++seq;$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a request.";}};
+ $("result-request").onchange=()=>{const id=$("result-request").value;if(id)showOutputs(id);else{selected=null;++seq;if(kind==="extractor")$("output-controls").hidden=true;$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a request.";}};
  const put=(tag,text)=>{const e=document.createElement(tag);e.textContent=text;return e;};
  async function api(path,method="GET",body){
    const headers={Accept:"application/json"};
@@ -90,7 +90,7 @@
    const p=payload(), files=refMode?.value==="upload"?[...refsSelected]:[];
    if(refMode?.value==="upload"&&kind==="extractor"&&(p.settings.mode==="reference"||p.settings.framing!=="whole")&&!files.length){status.textContent="Select reference images.";return;}
    const library=refMode?.value==="library",chosen=library?selectedIdentity:null;
-   if(library&&!chosen){status.textContent="Choose a reference identity.";return;}
+   if(library&&!chosen&&(p.settings.mode==="reference"||p.settings.framing!=="whole")){status.textContent="Choose a reference identity.";return;}
    const fingerprint=JSON.stringify([p,chosen,files.map(f=>[f.name,f.size,f.lastModified])]);
    if(lastPayload!==fingerprint||!key){key=crypto.randomUUID().replaceAll("-","");lastPayload=fingerprint;}
    saving=true;$("save-request").disabled=true;status.textContent="Saving request…";
@@ -112,7 +112,7 @@
    }
    function applyChoice(item){
      selectedIdentity=item;$("reference-identity-label").textContent=item.name;
-     $("reference-library-summary").textContent=item.images.length+" reference images · "+item.slug+"_001.mp4 naming";
+     $("reference-library-summary").textContent=item.images.length+" reference images · "+item.slug+"_###.mp4 naming";
    }
    function drawLibrary(){
      const q=value("identity-search").toLowerCase();grid.replaceChildren();
@@ -204,7 +204,7 @@
    video.pause();video.removeAttribute("src");video.load();video.hidden=true;list.replaceChildren();$("output-status").textContent="Loading…";
    try{const data=await api("/requests/"+job+"/outputs");if(stamp!==seq)return;
      const clips=data.outputs.filter(f=>f.media_type==="video/mp4"),known=clips.every(f=>Number.isFinite(f.duration_ms));
-     $("output-status").textContent=data.outputs.length?(data.identity?data.identity+" · ":"")+clips.length+" clips"+(known&&clips.length?" · "+(clips.reduce((n,f)=>n+f.duration_ms,0)/1000).toFixed(2)+" seconds":"")+" · Verified files for "+job.slice(0,8):"No verified outputs available for this request.";
+     $("output-status").textContent=data.outputs.length?(kind==="extractor"?(data.identity?data.identity+" · ":"")+clips.length+" clips"+(known&&clips.length?" · "+(clips.reduce((n,f)=>n+f.duration_ms,0)/1000).toFixed(2)+" seconds":"")+" · ":"")+"Verified files for "+job.slice(0,8):"No verified outputs available for this request.";
      if(kind==="extractor"){$("output-controls").hidden=!clips.length;$("output-delete-selected").disabled=!data.editable;}
      for(const file of data.outputs){const row=put("div","");row.className="studio-output";const id=file.id||file.name;
        if(kind==="extractor"&&file.media_type==="video/mp4"){const check=document.createElement("input");check.type="checkbox";check.dataset.output="";check.value=id;check.setAttribute("aria-label","Select "+file.name);row.append(check);}
@@ -239,7 +239,7 @@
  async function showReview(job){
    const pane=$("review-panel"), rows=$("review-ranges"), note=$("review-status"), approve=$("review-approve");
    selected=null;$("result-request").value="";$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a completed request to inspect its outputs.";
-   extras.add("review-panel");setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
+   extras.add("review-panel");if(kind==="extractor")$("output-controls").hidden=true;setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
    const stamp=++seq;
    try{
      const data=await api("/requests/"+job+"/review");if(stamp!==seq)return;
