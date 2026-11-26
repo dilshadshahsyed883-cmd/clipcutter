@@ -9,4 +9,4 @@ python -m compileall -q app run.py tests deploy/init-local-admin.py
 python -m unittest discover -s tests -v
 ```
 
-No tests have been executed in the connector editing environment. Browser parity, deployment helper and host checks remain outstanding. No EXE builds or GitHub Actions workflows. Do not merge until source tests and review pass.
+Guarded manual VPS bootstrap/preflight/stage, private configuration checks, source test runner, rollback and independent Nginx cutover are now provided as source candidates. Local clone attempt failed because github.com DNS is unavailable in the execution container; runtime tests and shell syntax checks have not been executed. Run `bash deploy/test-source.sh` from this folder on an unprivileged test host with repository and PyPI access. Browser parity, live host checks and deployment script execution remain unverified. No EXE builds or GitHub Actions workflows. Do not merge until source tests and review pass.

@@ -26,13 +26,16 @@ export GIT_TERMINAL_PROMPT=0
 remote_main(){ git ls-remote --exit-code "$REPO" refs/heads/main | awk '{print $1}'; }
 [[ "$(remote_main)" == "$SHA" ]] || fail 'Approved SHA does not match remote main'
 WORK="$(mktemp -d /root/clipcutter-release.XXXXXXXX)"
-STAGE=''; OLD=''; PROMOTED=0; DONE=0
+STAGE=''; OLD=''; PROMOTED=0; DONE=0; WAS_ACTIVE=0
 cleanup(){
   local rc=$?
   trap - EXIT
   if (( PROMOTED == 1 && DONE == 0 )); then
     if [[ -n "$OLD" && -d "$OLD" ]]; then
-      ln -s "$OLD" "$ROOT/.rollback-$SHA" && mv -Tf "$ROOT/.rollback-$SHA" "$ROOT/current" && systemctl restart clipcutter-web.service || echo 'ROLLBACK_SERVICE_FAILED' >&2
+      if ln -s "$OLD" "$ROOT/.rollback-$SHA" && mv -Tf "$ROOT/.rollback-$SHA" "$ROOT/current"; then
+        if (( WAS_ACTIVE == 1 )); then systemctl restart clipcutter-web.service || echo 'ROLLBACK_SERVICE_FAILED' >&2
+        else systemctl stop clipcutter-web.service || echo 'ROLLBACK_STOP_FAILED' >&2; fi
+      else echo 'ROLLBACK_LINK_FAILED' >&2; fi
     else
       systemctl stop clipcutter-web.service || echo 'ROLLBACK_STOP_FAILED' >&2
       rm -f "$ROOT/current"
@@ -99,14 +102,16 @@ done
 [[ -f "$UNIT" && ! -L "$UNIT" && "$(stat -c '%U:%a' "$UNIT")" == root:644 ]] || fail 'Private systemd unit not installed'
 cmp -s "$UNIT" "$SRC/deploy/clipcutter-web.service" || fail 'Unit changed; review separately'
 [[ -f "$HELPER" && ! -L "$HELPER" && "$(stat -c '%U:%a' "$HELPER")" == root:750 ]] || fail 'Private deploy helper missing'
+cmp -s "$HELPER" "$SRC/deploy/guarded-release.sh" || fail 'Installed helper differs from approved source; review and update separately'
 PORT="$(python3 "$SRC/deploy/check-env.py")"
 if [[ -L "$ROOT/current" ]]; then
   OLD="$(readlink -f "$ROOT/current")"
   [[ "$OLD" =~ ^/srv/clipcutter-web/releases/[0-9a-f]{40}$ && -d "$OLD" ]] || fail 'Unexpected current release'
 elif [[ -e "$ROOT/current" ]]; then fail 'Current must be a symlink'; fi
 if systemctl is-active --quiet clipcutter-web.service; then
+  WAS_ACTIVE=1
   [[ -n "$OLD" ]] || fail 'Unexpected running service without selected release'
-  curl -fsS --max-time 8 "http://127.0.0.1:$PORT/healthz" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x=={"ok":True,"service":"clipcutter-web"}' || fail 'Configured port does not identify active ClipCutter'
+  curl -fsS --max-time 8 "http://127.0.0.1:$PORT/healthz" | python3 -c 'import json,sys; x=json.load(sys.stdin); sys.exit(0 if x=={"ok":True,"service":"clipcutter-web"} else 1)' || fail 'Configured port does not identify active ClipCutter'
 else
   [[ -z "$(ss -H -ltn "sport = :$PORT")" ]] || fail 'Configured loopback port occupied'
 fi
@@ -120,9 +125,11 @@ find "$STAGE" -type d -exec chmod 0755 {} +
 find "$STAGE" -type f -exec chmod 0644 {} +
 # Install only in this release-specific virtual environment; never into system Python.
 install -d -o "$USER_NAME" -g "$(id -gn "$USER_NAME")" -m 0755 "$STAGE/.venv"
-runuser -u "$USER_NAME" -- env -i PATH=/usr/bin:/bin HOME="$DATA" python3 -m venv "$STAGE/.venv"
-runuser -u "$USER_NAME" -- env -i PATH=/usr/bin:/bin HOME="$DATA" "$STAGE/.venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$STAGE/requirements.txt"
+runuser -u "$USER_NAME" -- env -i PATH=/usr/bin:/bin HOME="$DATA" bash -c 'umask 022; exec python3 -m venv "$1"' _ "$STAGE/.venv"
+runuser -u "$USER_NAME" -- env -i PATH=/usr/bin:/bin HOME="$DATA" bash -c 'umask 022; exec "$1/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$2"' _ "$STAGE/.venv" "$STAGE/requirements.txt"
 chown -hR root:root "$STAGE/.venv"
+# Keep root-owned runtime readable/executable by the unprivileged service.
+chmod -R go-w "$STAGE/.venv"
 # Tests use disposable configuration, never the live environment. No EXE/CI build.
 (
   cd "$STAGE"
@@ -160,7 +167,7 @@ for ((i=0;i<25;i++)); do
   if curl -fsS --max-time 2 "$BASE/healthz" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x=={"ok":True,"service":"clipcutter-web"}' 2>/dev/null; then break; fi
   sleep 1
 done
-curl -fsS --max-time 5 "$BASE/healthz" | python3 -c 'import json,sys; assert json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"}'
+curl -fsS --max-time 5 "$BASE/healthz" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"} else 1)'
 for p in /dashboard /admin /api/v1/session /studio/extractor /studio/analyzer; do
   [[ "$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$BASE$p")" == 401 ]] || fail "Anonymous access check failed: $p"
 done

@@ -9,3 +9,5 @@ Do not execute on production until the exact source passes source-level tests an
 - Separate HTTPS activation: obtain and verify a valid certificate for the exact hostname (certificate issuance is not included), then run pinned current `deploy/nginx-cutover.sh activate <SHA>`. No overwrite of existing sites; rollback is `rollback <SHA>` for the exact managed route. Nginx is reloaded, not restarted.
 - Live browser login/logout, dashboard metrics, DNS, TLS and existing sites must be verified independently. GPU/processing integration belongs to subsequent steps. This foundation helper does not yet support active production job drainage or schema migration; add those gates before future processing releases.
 - The deployment source is unexecuted on VPS; do not infer live deployment from repository commits.
+
+For source-only validation from a clean non-production checkout, run `bash ClipCutterWeb/deploy/test-source.sh` as an unprivileged user. It checks shell syntax, compiles Python and runs the regression suite in a disposable venv. No service writes or deployment. An installed helper that differs from the pinned helper is rejected; review upgrades separately.

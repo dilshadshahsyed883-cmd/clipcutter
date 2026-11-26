@@ -36,7 +36,7 @@ for p in "$SITE" "$LINK" "$MARK"; do
   [[ ! -e "$p" && ! -L "$p" ]] || fail 'Existing ClipCutter path; do not overwrite'
 done
 [[ -d /etc/nginx/sites-available && -d /etc/nginx/sites-enabled ]] || fail 'Expected Nginx layout missing'
-nginx -T 2>/dev/null | python3 -c 'import re,sys; t=re.sub(r"#[^\n]*","",sys.stdin.read()); assert re.search(r"include\s+/etc/nginx/sites-enabled/\*\s*;",t); assert not any("clip.scenebuilder.online" in x.split() for x in re.findall(r"server_name\s+([^;]+);",t))' || fail 'Missing include or existing hostname conflict'
+nginx -T 2>/dev/null | python3 -c 'import re,sys; t=re.sub(r"#[^\n]*","",sys.stdin.read()); sys.exit(0 if re.search(r"include\s+/etc/nginx/sites-enabled/\*\s*;",t) and not any("clip.scenebuilder.online" in x.split() for x in re.findall(r"server_name\s+([^;]+);",t)) else 1)' || fail 'Missing include or existing hostname conflict'
 [[ "$(getent ahostsv4 "$HOST" | awk '{print $1}' | sort -u)" == 137.74.162.143 ]] || fail 'DNS mismatch'
 [[ -r "$CERT" && -r "$KEY" ]] || fail 'Obtain verified host-specific certificate separately'
 openssl x509 -in "$CERT" -noout -checkhost "$HOST" | grep -q 'does match certificate' || fail 'Certificate hostname mismatch'
@@ -44,7 +44,7 @@ openssl x509 -in "$CERT" -noout -checkend 604800 || fail 'Certificate expires so
 [[ "$(openssl x509 -in "$CERT" -pubkey -noout | sha256sum)" == "$(openssl pkey -in "$KEY" -pubout | sha256sum)" ]] || fail 'Certificate/key mismatch'
 PORT="$(python3 "$ROOT/current/deploy/check-env.py")"
 systemctl is-active --quiet clipcutter-web.service || fail 'ClipCutter service inactive'
-curl -fsS --max-time 5 "http://127.0.0.1:$PORT/healthz" | python3 -c 'import json,sys; assert json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"}'
+curl -fsS --max-time 5 "http://127.0.0.1:$PORT/healthz" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"} else 1)'
 baseline(){ curl -sS --max-time 12 -o /dev/null -w '%{http_code}' "https://$1/"; }
 APP_BEFORE="$(baseline app.scenebuilder.online)"
 CONCAT_BEFORE="$(baseline concat.scenebuilder.online)"
@@ -94,7 +94,7 @@ chmod 0644 "$SITE"
 ln -s "$SITE" "$LINK"; LINKED=1
 nginx -t
 systemctl reload nginx
-curl -fsS --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/healthz" | python3 -c 'import json,sys; assert json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"}'
+curl -fsS --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/healthz" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"ok":True,"service":"clipcutter-web"} else 1)'
 for p in /dashboard /admin /api/v1/session; do
   [[ "$(curl -sS --max-time 10 --resolve "$HOST:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://$HOST$p")" == 401 ]] || fail 'HTTPS anonymous check failed'
 done

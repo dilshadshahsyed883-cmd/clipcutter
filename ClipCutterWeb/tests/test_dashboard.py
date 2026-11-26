@@ -1,7 +1,14 @@
 from unittest.mock import patch
 import test_admin_security
 
-class DashboardTests(test_admin_security.LocalAdminSecurityTests):
+import unittest
+
+class DashboardTests(unittest.TestCase):
+    setUp = test_admin_security.LocalAdminSecurityTests.setUp
+    _form = test_admin_security.LocalAdminSecurityTests._form
+    _login = test_admin_security.LocalAdminSecurityTests._login
+    _signed_in = test_admin_security.LocalAdminSecurityTests._signed_in
+
     def test_dashboard_requires_login_and_reports_unavailable(self):
         self.assertEqual(self.client.get("/api/v1/dashboard/system").status_code, 401)
         self._signed_in()
