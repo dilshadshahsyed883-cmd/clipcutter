@@ -22,7 +22,7 @@ Owner instruction recorded on 26 November 2026:
 ## Windows source ZIP location rule
 
 - Store the final PC-testing source ZIP in the Windows Downloads folder by default.
-- Extract the runnable source app under `%LOCALAPPDATA%\ClipivoV2\app\Clipivo_V2\`, never into Downloads by default.
+- Extract the runnable source app beside the ZIP in the Windows Downloads folder as `Clipivo_V2/`.
 - Preserve the archive name `Clipivo_V2_3_Windows.zip`, its single outer `Clipivo_V2` folder, `START_V2.bat` and `_internal` structure.
 - Keep the Python runtime under `%LOCALAPPDATA%\ClipivoV2\runtime\`; do not bundle it in the ZIP.
 - Follow `docs/PC_TEST_ZIP_METHOD.md`. Creating a requested source ZIP does not authorize an EXE build, packaging an executable, or adding a GitHub Actions build workflow.
@@ -30,7 +30,7 @@ Owner instruction recorded on 26 November 2026:
 ## Clean, location-independent Windows PC-testing source layout
 
 - `Clipivo_V2/` must contain exactly `START_V2.bat` and `_internal/`. Keep documentation in `_internal/docs/`, licenses in `_internal/licenses/`, reports in `_internal/reports/`, tests in `_internal/tests/`, and inactive development scripts in `_internal/dev/`.
-- Default extraction remains LocalAppData, but the launcher must run from any writable or read-only source location with spaces; all dependencies are installed only in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3\`. Ignore legacy source-local virtual environments; recreate the runtime in AppData from Python, never relocate or delete the legacy environment automatically.
+- Default extraction is the Windows Downloads folder, but the launcher must run from any writable or read-only source location with spaces; all dependencies are installed only in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3\`. Ignore legacy source-local virtual environments; recreate the runtime in AppData from Python, never relocate or delete the legacy environment automatically.
 - AppData stores pip cache, launcher temp files and export cache. Preserve verified upstream model/FFmpeg caches at `%LOCALAPPDATA%\Clipivo` and Studio models, Node, settings, projects and profiles at `%LOCALAPPDATA%\ClipivoV2`; retain existing legacy data read paths without moving/deleting user data. Existing external model files may be reused read-only. User-selected media/export paths remain user-controlled.
 - Source replacement never requires clearing persistent AppData. EXE builds and GitHub Actions build workflows remain prohibited. Keep package documentation snapshots aligned with repository docs.
 
@@ -40,4 +40,4 @@ The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2
 
 ## Mandatory delivery clarification — 26 November 2026
 
-The owner's latest instruction supersedes the earlier ZIP destination rule: **the final PC-testing source ZIP must be saved in the Windows Downloads folder**, as `Clipivo_V2_3_Windows.zip`. A direct browser download or a PowerShell command targeting the user's Downloads known folder is acceptable. The extracted application, Python runtime, dependencies, models, settings and temporary setup files remain in LocalAppData. Verify ZIP structure before delivery; preserve existing user data and archived releases. No EXE build or GitHub Actions workflow is authorized.
+The owner's latest instruction supersedes the earlier ZIP destination rule: **the final PC-testing source ZIP must be saved in the Windows Downloads folder**, as `Clipivo_V2_3_Windows.zip`. A direct browser download or a PowerShell command targeting the user's Downloads known folder is acceptable. The extracted application also belongs in Downloads as `Clipivo_V2/`. Python runtime, dependencies, models, settings and temporary setup files remain in LocalAppData. Verify ZIP structure before delivery; preserve existing user data and archived releases. No EXE build or GitHub Actions workflow is authorized.

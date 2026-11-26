@@ -40,3 +40,6 @@ Only `START_V2.bat` and `_internal` belong in the source-folder root. Run the la
 ## 2.3.1 workflow
 
 Select a reference and footage folder in Replacement Studio, then Generate timeline. New analyses are indexed in AppData; matching compatible cached analyses are reused. Review missing/uncertain results manually, approve valid selections, then render or open in CapCut. Advanced controls remain available. Existing old projects are not automatically registered without reliable provenance. See PLAN_2_3_1.md for limitations and outstanding work.
+
+
+Default PC testing layout: Downloads contains `Clipivo_V2_3_Windows.zip` and the extracted `Clipivo_V2/` folder side by side. All runtime dependencies and persistent data remain in AppData.

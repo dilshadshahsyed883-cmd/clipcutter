@@ -25,6 +25,6 @@ All further work belongs in this repository. Rajudesktop supplied the CapCut dra
 
 ## PC testing ZIP
 
-Source ZIP and extracted app default to `%LOCALAPPDATA%\ClipivoV2`, not Downloads. See [PC testing ZIP method](docs/PC_TEST_ZIP_METHOD.md) for the archive layout, exact directories and setup requirements. This is a documented requirement; executable builds remain prohibited.
+Source ZIP and extracted app default to the Windows Downloads folder; Python runtime and persistent user data remain under LocalAppData. See [PC testing ZIP method](docs/PC_TEST_ZIP_METHOD.md) for the archive layout, exact directories and setup requirements. This is a documented requirement; executable builds remain prohibited.
 
 The source folder is location-independent; only the default delivery location is AppData. Runtime, caches, models and persistent data are outside the source tree.
