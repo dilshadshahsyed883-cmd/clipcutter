@@ -82,7 +82,7 @@ def scene_candidates(scene,reference,media,weights=None,used=None,minimum=.70,al
             key=(video['path'],n);score-=min(.3,used.get(key,0)*.1)
             out.append(dict(path=video['path'],scene=n,start=s['start'],end=s['end'],score=round(score,4),scores=scores,confirmed_people=list(s.get('confirmed_people',[]))))
     out.sort(key=lambda c:-c['score'])
-    return out[:20]
+    return out if allow_short else out[:20]
 
 def build_plan(reference, media, weights=None, minimum=.70, clip_minimum=None, clip_maximum=None, min_speed=.67):
     rows, used = [], {}
