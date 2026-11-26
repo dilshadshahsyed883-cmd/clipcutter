@@ -77,8 +77,8 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
     most = total//lo
     if not allow_repeats:
         most = min(most, len(caps))
-    feasible = [n for n in range(least, most+1)
-                if n <= 100000 and (allow_repeats or prefix[n] >= total)]
+    feasible = [n for n in range(least, min(most,100000)+1)
+                if allow_repeats or prefix[n] >= total]
     if not feasible:
         raise ValueError('Total duration cannot be covered within clip limits and source/repeat constraints')
     rng = Random(seed)
