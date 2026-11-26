@@ -49,16 +49,21 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
                       cooldown=2, allow_repeats=True, group_weights=None):
     if not all(math.isfinite(v) for v in (minimum, maximum, reference['duration'])) or not 0 < minimum <= maximum:
         raise ValueError('Clip durations must satisfy 0 < minimum ≤ maximum')
-    total = round(reference['duration']*1e6)
-    lo, hi = math.ceil(minimum*1e6-1e-8), math.floor(maximum*1e6+1e-8)
-    if lo <= 0 or hi < lo or not 0 < total <= 86400*1e6:
+    scale = float(reference.get('fps') or 1e6)
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError('Invalid reference frame rate')
+    total = round(reference['duration']*scale)
+    if abs(total/scale-reference['duration']) > 1e-6:
+        raise ValueError('Reference duration is not representable on its frame grid')
+    lo, hi = math.ceil(minimum*scale-1e-8), math.floor(maximum*scale+1e-8)
+    if lo <= 0 or hi < lo or not 0 < reference['duration'] <= 86400:
         raise ValueError('Invalid timeline or clip limits')
     if cooldown < 0:
         raise ValueError('Cooldown must be nonnegative')
     sources = []
     for m in sorted(media, key=lambda x: x['path']):
         for i, scene in enumerate(m['scenes']):
-            available = math.floor((scene['end']-scene['start'])*1e6+1e-7)
+            available = math.floor((scene['end']-scene['start'])*scale+1e-7)
             group = keyword(m['path'])
             weight = float((group_weights or {}).get(group, 0 if group_weights else 1))
             if not math.isfinite(weight) or weight < 0:
@@ -118,10 +123,10 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
         s = sources[j]
         lower, upper = bounds[j]
         duration = lower+round(rng.unit()*(upper-lower))
-        trim = s['start']+int(rng.unit()*(s['available']-duration))/1e6
-        original = dict(start=at/1e6,end=(at+duration)/1e6,people=[],visual=[0.]*128,activity='',framing='',environment='',angle='')
+        trim = s['start']+int(rng.unit()*(s['available']-duration))/scale
+        original = dict(start=at/scale,end=(at+duration)/scale,people=[],visual=[0.]*128,activity='',framing='',environment='',angle='')
         selected = dict(path=s['path'],scene=s['scene'],start=s['start'],end=s['end'],
-                        trim_start=trim,target_duration=duration/1e6,speed=1.,score=None,picked=True)
+                        trim_start=trim,target_duration=duration/scale,speed=1.,score=None,picked=True)
         rows.append(dict(original=original,selected=selected,candidates=[],approved=False,manual_review=True,identity_required=[]))
         at += duration
         uses[j] += 1
