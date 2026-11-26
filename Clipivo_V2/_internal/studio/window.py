@@ -25,6 +25,7 @@ class SettingsPage(QWidget):
         self.capcut_drafts=QLineEdit(cfg.get('capcut_drafts',''));row=QHBoxLayout();row.addWidget(self.capcut_drafts);button('Browse',self.browse_drafts,row);form.addRow('CapCut drafts folder (blank = auto)',row)
         self.notice=QLabel('Default InsightFace buffalo_l models: non-commercial research use. Commercial use needs separately licensed weights. This build supports compatible ONNX file replacement; it does not bundle model weights.\n\nFace models are reused from your Clipivo installation when compatible. The original installed application remains independent.\n\nGPU choice follows the installed ONNX Runtime provider: Windows DirectML by default; CUDA requires the compatible GPU runtime and drivers. GPU utilization is not reported unless measured.');self.notice.setWordWrap(True);l.addWidget(self.notice)
         row=QHBoxLayout();l.addLayout(row);button('Save analysis settings',self.save,row);button('Extraction / media settings',lambda:window.open_settings(),row);button('Open data folder',self.open_data,row);l.addStretch()
+        button('Import V2.2 People Library',self.import_legacy,l)
     def browse_drafts(self):
         p=QFileDialog.getExistingDirectory(self,'CapCut Projects / com.lveditor.draft folder')
         if p:self.capcut_drafts.setText(p)
@@ -44,6 +45,16 @@ class SettingsPage(QWidget):
         self.window.face_engine.model_dir=Path(self.models.text()) if self.models.text() else None
         self.window.face_engine._application=None
         QMessageBox.information(self,'Settings','Settings saved for future analyses.')
+    def import_legacy(self):
+        if self.window._video_job_running() or self.window.batch_page.is_running():return QMessageBox.warning(self,'People Library','Finish active work before importing profiles.')
+        folder=QFileDialog.getExistingDirectory(self,'Select V2.2 People_Library',str(root()/'People_Library'))
+        if not folder:return
+        try:
+            from .storage import Profiles
+            imported,skipped=Profiles(self.window.character_store).import_v22(folder)
+            self.window.people_page.refresh()
+            QMessageBox.information(self,'V2.2 profile import',f'Imported {len(imported)} profiles; skipped {len(skipped)}. Original files are unchanged. Embeddings will be rebuilt during analysis.'+('\\n'+'\\n'.join(skipped[:15]) if skipped else ''))
+        except Exception as exc:QMessageBox.warning(self,'Profile import failed',str(exc))
     def open_data(self):
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
