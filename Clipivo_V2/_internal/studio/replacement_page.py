@@ -54,21 +54,25 @@ class ReplacementPage(QWidget):
             if a.data and a.data.get('source')==result['path']:
                 for scene in result['scenes']:self.link_scene_people(scene,a.data)
             self.heading.setText(Path(result['path']).name+f"  •  {len(result['scenes'])} estimated scenes  •  {result['duration']:.2f}s");self.populate();self.show_video(self.original,result['path'],0)
+        elif self.operation in ('Match scenes','Pick clips'):
+            self.plan=result;self.populate()
+            self.status.setText('Timeline created; approve each clip. '+ ' '.join(result.get('warnings',[])))
         elif self.operation=='Index footage':self.status.setText(f'Index saved: {len(result)} videos. Unchanged videos reuse cached descriptors. Add identity/activity/framing labels before matching.')
         elif self.operation=='CapCut':self.status.setText('Editable draft verified: '+result['folder']+'  •  Open it from CapCut Home → Projects.'+(' CapCut launched.' if result.get('launched') else ' Start CapCut manually.'))
         elif self.operation=='Render':self.status.setText('Validated reconstruction saved: '+str(result))
     @staticmethod
     def link_scene_people(scene,data,source_footage=False):
         groups=[g for g in data['people'] if not g.get('ignored') and not g.get('filtered') and any(x<scene['end'] and y>scene['start'] for x,y in g['segments'])]
-        confirmed={str(g['library_id']) for g in groups if g.get('library_id')}
-        unknown={f"unknown:{data['source']}:{g['id']}" for g in groups if not g.get('library_id')}
+        known=[g for g in groups if g.get('library_id') and g.get('identity_status') in ('matched','manual')]
+        confirmed={str(g['library_id']) for g in known}
+        unknown={f"unknown:{data['source']}:{g['id']}" for g in groups if g not in known}
         scene['people']=sorted(confirmed|unknown)
         if source_footage:
             # A partial appearance does not establish identity for the full source trim.
             covered=set()
             for identity in confirmed:
                 at=scene['start']
-                intervals=sorted((x,y) for g in groups if str(g.get('library_id'))==identity for x,y in g['segments'])
+                intervals=sorted((x,y) for g in known if str(g.get('library_id'))==identity for x,y in g['segments'])
                 for x,y in intervals:
                     if x>at+1e-6:break
                     at=max(at,y)
@@ -89,10 +93,12 @@ class ReplacementPage(QWidget):
         if limits.get('enabled'):
             kwargs=dict(clip_minimum=float(limits.get('minimum',2.5)),clip_maximum=float(limits.get('maximum',4.0)))
             if not 0<kwargs['clip_minimum']<=kwargs['clip_maximum']:return self.error('Invalid clip duration limits.')
-        try:
-            self.plan=build_plan(copy.deepcopy(self.reference),media,weights,**kwargs)
-            self.populate()
-        except Exception as e:self.error(str(e))
+        reference=copy.deepcopy(self.reference)
+        def work(task):
+            media=Index().all()
+            if not media:raise ValueError('Index footage first.')
+            return build_plan(reference,media,weights,**kwargs,cancel=task.stop.is_set)
+        self.run('Match scenes',work)
     def populate(self):
         scenes=self.plan['rows'] if self.plan else [{'original':s} for s in (self.reference or {}).get('scenes',[])];self.table.blockSignals(True);self.table.setRowCount(len(scenes))
         for i,row in enumerate(scenes):
@@ -251,8 +257,6 @@ class ReplacementPage(QWidget):
 
     def pick_clips(self):
         if not self.reference:return self.error('Open a reference video first to set the total timeline duration and audio.')
-        media=self.index.all()
-        if not media:return self.error('Index footage first.')
         from PySide6.QtWidgets import QSpinBox,QCheckBox,QLineEdit
         from .storage import load_settings,save_settings
         from .picker import build_picked_plan
@@ -273,7 +277,13 @@ class ReplacementPage(QWidget):
                 name,value=pair.rsplit('=',1);value=float(value)
                 if not name.strip() or not 0<=value<=100:raise ValueError('Keyword weights must be between 0 and 100')
                 group_weights[name.strip()]=value
-            plan=build_picked_plan(self.reference,media,**options,group_weights=group_weights or None);save_settings({'picker':dict(options,group_weights=group_weights)});self.plan=plan;self.populate();self.status.setText('Picked timeline created; approve each clip. '+ ' '.join(plan.get('warnings',[])))
+            reference=copy.deepcopy(self.reference)
+            save_settings({'picker':dict(options,group_weights=group_weights)})
+            def work(task):
+                media=Index().all()
+                if not media:raise ValueError('Index footage first.')
+                return build_picked_plan(reference,media,**options,group_weights=group_weights or None,cancel=task.stop.is_set)
+            self.run('Pick clips',work)
         except Exception as e:self.error(str(e))
 
     def import_identities(self):
