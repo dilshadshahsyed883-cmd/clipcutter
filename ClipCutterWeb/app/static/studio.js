@@ -85,6 +85,19 @@
      };
    }catch(e){note.textContent=e.message;}
  }
+ async function showBatch(job){
+   const pane=$("batch-panel"), rows=$("batch-members");pane.hidden=false;rows.replaceChildren();
+   try{
+     const data=await api("/requests/"+job+"/batch");
+     for(const member of data.requests){
+       const row=put("div","");row.className="studio-output";
+       row.append(put("span",member.ordinal+". "+member.label+" — "+member.state));
+       row.append(button("Outputs",()=>showOutputs(member.id)));
+       if(member.state==="review")row.append(button("Review",()=>showReview(member.id)));
+       rows.append(row);
+     }
+   }catch(e){rows.textContent=e.message;}
+ }
  async function refresh(){
    if(refreshing||document.hidden)return;refreshing=true;
    try{const data=await api("/requests?kind="+kind),rows=$("request-rows");rows.replaceChildren();
@@ -92,6 +105,7 @@
      for(const job of data.requests){const tr=document.createElement("tr");
        [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
+       if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:"))))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
