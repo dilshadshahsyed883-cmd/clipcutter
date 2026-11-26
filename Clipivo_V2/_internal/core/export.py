@@ -164,7 +164,10 @@ def embed_cover(output: Path, cover: Path, logs: list[str] | None = None) -> boo
 
 def export_work_dir() -> Path:
     """Scratch space for segments: Clipivo's cache, never the user's video folders."""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "clipivo"
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "ClipivoV2" / "cache" / "export"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "clipivo"
     base.mkdir(parents=True, exist_ok=True)
     return base
 

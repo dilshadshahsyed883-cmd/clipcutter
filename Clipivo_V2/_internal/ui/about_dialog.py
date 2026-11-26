@@ -116,9 +116,9 @@ class AboutDialog(QDialog):
         layout.addLayout(row)
 
     def _show_licence(self) -> None:
-        """The licence as the repository ships it, read from LICENSE rather than retyped."""
+        """The licence as the repository ships it, read from licenses/LICENSE rather than retyped."""
         try:
-            text = (APP_DIR / "LICENSE").read_text(encoding="utf-8")
+            text = (APP_DIR / "licenses" / "LICENSE").read_text(encoding="utf-8")
         except OSError:
             text = f"MIT License. See {REPOSITORY_URL}/blob/main/LICENSE"
         dialog = QDialog(self)

@@ -1,3 +1,7 @@
+# Clean source layout checkpoint — 26 November 2026
+
+Static source/path checks only; Windows launcher, downloads and end-to-end regression not executed. Root layout, relocated resources and tests, AppData runtime and cache path contracts verified at source level. Existing models/tools/user data are not relocated. No executable build or workflow.
+
 # Extractor parity restoration — 26 November 2026
 
 Static source comparison against upstream v0.7.7: face_engine.py, face_models.py, video_analysis.py, ui/main_window.py, ui/settings_dialog.py and core/downloads.py are unchanged; the original model constructor and dependency pins are restored. Studio settings no longer assign the extractor model directory or invalidate its engine. AppData launcher checks the requirements hash and reconciles dependencies before startup if it changes. Optional strict clip limits and output safety guards remain. No Windows runtime, actual face inference or same-video parity result is claimed. No EXE build or workflow.
@@ -18,7 +22,7 @@ Exact Agent 1 `61381f891c44899f58f015223ff6b4f1093ebdb7` and Agent 2 `694500d57b
 Run on a full accessible source checkout (with Python dependencies, Node and FFmpeg/FFprobe installed), from `Clipivo_V2/_internal`:
 
 ```sh
-QT_QPA_PLATFORM=offscreen python -m pytest -q tests ../tests
+QT_QPA_PLATFORM=offscreen python -m pytest -q tests
 ```
 
 On Windows set the same environment variable using the shell's syntax; then run six-tab startup/navigation, background match/pick/cancel/close and extractor handoff checks. Real Windows/GPU/face model inference and installed CapCut draft playback remain outstanding.

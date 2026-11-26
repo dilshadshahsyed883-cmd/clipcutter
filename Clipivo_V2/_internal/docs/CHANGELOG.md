@@ -1,3 +1,8 @@
+# Clean source layout — 26 November 2026
+
+- Root contains only launcher and `_internal`; move docs, licenses, reports, tests and disabled build recipe inside it.
+- AppData-only Python/pip/temp and export cache; existing model and tool paths retained. No local environment migration/deletion or user-data removal. Windows test pending.
+
 # V2.3 extractor parity restoration — 26 November 2026
 
 - Restore original v0.7.7 checksum-verified model discovery for Clip Extractor and Batch; isolate Person Analyzer model settings.
@@ -15,7 +20,7 @@
 - Confirmed-person matching contract retained; corrected old multi-person test and aligned CapCut fixtures with canonical reviewed plans.
 - Prevented repeated source files across indexed scenes when source reuse is off; added capacity-aware allocation and validation.
 - Moved scene matching and picker computation/footage lookup into cancellable background tasks; preserved analyzer busy/extractor transfer lifecycle and added replacement shutdown guard.
-- Verified focused integrated backend tests (9 passed) and corrected identity assertions. Full regression, native Node rerun and Qt navigation remain unverified; see TEST_REPORT.md.
+- Verified focused integrated backend tests (9 passed) and corrected identity assertions. Full regression, native Node rerun and Qt navigation remain unverified; see ../reports/TEST_REPORT.md.
 - No build, package, workflow change or main merge. Review PR only.
 
 # V2.3 development checkpoint
@@ -24,4 +29,4 @@
 - Added replacement review/index/render services, persistent settings and encrypted embedding profiles.
 - Reused Rajudesktop CapCut writer logic and adapted optional clip speed.
 - Ported the relevant Concat clip-selection logic; added strict min/max controls and draft same-person gap fill.
-- Saved work before further fixes/acceptance, as requested. See TEST_REPORT.md and ../docs/STATUS.md.
+- Saved work before further fixes/acceptance, as requested. See ../reports/TEST_REPORT.md and STATUS.md.

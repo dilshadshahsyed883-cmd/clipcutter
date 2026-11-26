@@ -2,13 +2,13 @@
 
 One Qt desktop application with Clip Extractor, Person Analyzer, Replacement Studio, Batch, People Library and Settings. It reuses the original Clipivo layout shown in the owner's reference screenshot.
 
-This is source, not a compiled Windows executable. Integration is incomplete and further fixes/testing were deferred by the owner. Read `../docs/STATUS.md` before using it on important projects.
+This is source, not a compiled Windows executable. Integration is incomplete and further fixes/testing were deferred by the owner. Read `STATUS.md` before using it on important projects.
 
 ## Windows source launch
 
 Install x64 Python 3.11 or newer with the Python launcher. Extract or clone the complete folder. Run `START_V2.bat`. The first source launch installs dependencies in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3`; Internet access is required. The ZIP/repository does not contain a virtual environment. Subsequent launches reuse the AppData runtime, including after replacing the source folder. When requirements change, the launcher reconciles the pinned versions once before startup. The extractor uses the original v0.7.7 dependency pins plus the studio-only psutil dependency. Never create or use `.venv` or `venv` inside `Clipivo_V2`. If a previous version left one there, close Clipivo and remove that old virtual-environment folder manually if no longer needed; the launcher does not migrate or delete it. If `LOCALAPPDATA` is unavailable, source startup stops rather than creating a local environment.
 
-Run `BUILD_EXE.bat` on Windows to attempt a PyInstaller one-folder executable build. Keep `dist\Clipivo\Clipivo.exe` and its `_internal` directory together. This build has not been run or verified on Windows. It does not include model weights, VLC or Node; missing dependencies may require first-use installation. Native playback uses VLC; without VLC, extraction remains accessible but full upstream playback is unavailable. Person Analyzer uses an OpenCV silent preview.
+EXE builds are prohibited. The historical recipe is inactive in `../dev/BUILD_EXE.bat`. Native playback uses VLC; without VLC, extraction remains accessible but full upstream playback is unavailable. Person Analyzer uses an OpenCV silent preview.
 
 ## Models and data
 
@@ -29,6 +29,10 @@ V2.3 projects/settings live under `%LOCALAPPDATA%\ClipivoV2`. Existing V2.2 `ana
 
 ## Tests
 
-From `_internal`, install pytest, then `python -m pytest -q tests`. Qt tests can use `QT_QPA_PLATFORM=offscreen`. Some tests require real FFmpeg and FFprobe. See `TEST_REPORT.md` for checks actually performed and limitations. Source-video inference, GPU and real Windows/CapCut compatibility have not been accepted.
+From `_internal`, install pytest, then `python -m pytest -q tests`. Qt tests can use `QT_QPA_PLATFORM=offscreen`. Some tests require real FFmpeg and FFprobe. See `../reports/TEST_REPORT.md` for checks actually performed and limitations. Source-video inference, GPU and real Windows/CapCut compatibility have not been accepted.
 
-See `THIRD_PARTY.md` and `LICENSE-AGPL-3.0.txt` for attribution and licenses.
+See `THIRD_PARTY.md` and `../licenses/LICENSE-AGPL-3.0.txt` for attribution and licenses.
+
+## PC-testing source layout and storage
+
+Only `START_V2.bat` and `_internal` belong in the source-folder root. Run the launcher from any location. It creates/reuses the AppData runtime, sets pip and temporary caches to `%LOCALAPPDATA%\ClipivoV2\cache`, and preserves old local virtual environments untouched. Export cache is `%LOCALAPPDATA%\ClipivoV2\cache\export`; original model/FFmpeg downloads are in `%LOCALAPPDATA%\Clipivo`, Studio model downloads in `%LOCALAPPDATA%\ClipivoV2\models`, Node in `%LOCALAPPDATA%\ClipivoV2\runtime\node`. Existing legacy stores and externally supplied verified models are not moved or deleted. Source replacement does not replace user data. Explicit output locations remain user-controlled. A broken existing AppData runtime is reported rather than deleted.

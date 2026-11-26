@@ -1,6 +1,6 @@
 # Integrated source checkpoint — 26 November 2026
 
-All three agents' source changes are combined on `work/capcut-integration` (merge `52b7170076e3a9061392fb8227a2dd7d00f5e92a`). Main remains untouched; review PR only. This is not a certified release. Read the three existing agent reports and `Clipivo_V2/TEST_REPORT.md` for distinct testing boundaries.
+All three agents' source changes are combined on `work/capcut-integration` (merge `52b7170076e3a9061392fb8227a2dd7d00f5e92a`). Main remains untouched; review PR only. This is not a certified release. Read the three existing agent reports and `Clipivo_V2/_internal/reports/TEST_REPORT.md` for distinct testing boundaries.
 
 ## Implemented source paths
 
@@ -47,3 +47,7 @@ Reordering and speed changes are editing tools; they do not establish permission
 ## Integration contracts
 
 Agent 1's stable analyzer busy state and extractor handoff are retained. Only matched/manual groups with persistent profile IDs are treated as confirmed cross-video identities. Agent 2's canonical version-1 plan is expanded once by the native adapter; source reuse disabled means one physical source file across all picked rows. Existing settings keys `clip_limits`, `picker`, and `capcut_drafts` are retained. Both selection operations use the worker task; cooperative cancellation does not instantly interrupt a native call. Native draft export blocks short/offset audio when exact representation cannot be guaranteed; FFmpeg reconstruction can pad short audio. Silent original reference handling differs: native export preserves silence, while the renderer requires an audio stream unless None is selected.
+
+## Subsequent clean source layout checkpoint
+
+The PC-testing source tree is reorganized under `_internal`. AppData source launcher paths and persistent storage policy are documented; no user data or local environments are removed. Windows launch and complete regression execution remain pending. No executable build or workflow.

@@ -4,6 +4,9 @@ import os
 import sys
 from pathlib import Path
 
+# Source runs should never write bytecode into the application folder.
+sys.dont_write_bytecode = True
+
 # Variables Clipivo, its packaging or its libraries change for this process, which programs
 # it starts must not inherit. A packaged Linux build points LD_LIBRARY_PATH at its own Qt,
 # GLib, OpenSSL and libstdc++; PySide6 sets QT_PLUGIN_PATH to its plugins; OpenCV sets
@@ -207,7 +210,7 @@ def self_test() -> int:
         except Exception as exc:  # noqa: BLE001
             failures.append(f"face models: {exc}")
     try:
-        report["license_bundled"] = (APP_DIR / "LICENSE").is_file()
+        report["license_bundled"] = (APP_DIR / "licenses" / "LICENSE").is_file()
         # Qt's image plugins must still load after the environment is handed back.
         from PySide6.QtCore import QBuffer, QByteArray, QIODevice
         from PySide6.QtGui import QImage

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_internal"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from studio.picker import build_picked_plan, constrain_ranges
 from studio.footage import Index, build_plan, expand_plan, fill_same_people
 from studio import render
