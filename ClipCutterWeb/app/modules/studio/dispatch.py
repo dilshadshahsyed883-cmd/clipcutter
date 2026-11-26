@@ -77,7 +77,7 @@ class WorkerClient:
         x=self.request("GET","/api/capabilities")
         if (x.get("source_sha")!=self.expected_sha or x.get("contract_version")!=2 or
             x.get("transport")!="verified-chunks-v1" or x.get("chunk_bytes")!=CHUNK or
-            x.get("ready") is not True or x.get("dispatch_enabled") is not True or x.get("concurrency")!=1):
+            x.get("ready") is not True or x.get("dispatch_enabled") is not True or (type(x.get("concurrency")) is not int or x["concurrency"] not in (1,2))):
             raise DispatchError("Approved worker version not ready")
         return x
     def create(self,a,m):return self.request("POST","/api/jobs/"+a,m)
@@ -168,16 +168,16 @@ class Dispatcher:
             if c.execute("SELECT 1 FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone():return
             c.execute("INSERT INTO gpu_attempts VALUES (?,?,?,?,?,?,?,NULL,NULL)",
                       (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"new",self.client.expected_sha,self.client.origin))
-    def tick(self,jid,*,allow_start=True,allow_during_intake=False):
+    def tick(self,jid,*,allow_start=True,allow_during_intake=False,render_limit=1,observe_only=False,may_start=None):
         if not ID.fullmatch(jid):raise DispatchError("Invalid job id")
         locks=safe_dir(self.store.root/"dispatch-locks")
-        # One owner-wide dispatch operation at a time, including across processes.
-        with os.fdopen(os.open(locks/"dispatcher.lock",os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
+        # One operation per durable job; scheduler owns cross-job lane admission.
+        with os.fdopen(os.open(locks/(jid+".lock"),os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return "busy"
             row=self._row(jid)
             if not row:
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
@@ -185,7 +185,7 @@ class Dispatcher:
             caps=self.client.capabilities()
             a=row["attempt_id"];m=json.loads(row["manifest"])
             if row["phase"]=="new":
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
                     raise DispatchError("Approved worker does not advertise YouTube support")
                 with self.store.connect() as c:
@@ -209,7 +209,7 @@ class Dispatcher:
                     if type(offset) is not int or not 0<=offset<=item["size"]:raise DispatchError("Invalid remote offset")
                 acknowledged=sum(offsets[name] for name in m["files"])
                 self.store.gpu_upload_progress(jid,acknowledged,total)
-                if not allow_start:return "paused"
+                if not allow_start or observe_only or (may_start and not may_start()):return "paused"
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])
@@ -224,7 +224,10 @@ class Dispatcher:
                         if type(result.get("offset")) is not int or result["offset"]!=offset+len(chunk):raise DispatchError("Unexpected upload acknowledgement")
                         self.store.gpu_upload_progress(jid,acknowledged+len(chunk),total)
                         return "staging"
-                if caps.get("active_renders")!=0:return "gpu_busy"
+                active=caps.get("active_renders")
+                if type(active) is not int or not 0<=active<min(render_limit,caps.get("concurrency",1)):
+                    return "preloaded"
+                if may_start and not may_start():return "paused"
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 self._phase(jid,"start_intent")
@@ -248,7 +251,10 @@ class Dispatcher:
                     target="cancelled" if state=="cancelled" and local!="delivering" else "failed"
                     self.store.transition(jid,local,target,"GPU: "+str(remote.get("error") or state)[:500])
                 self._phase(jid,state);return state
-            if state=="completed":return self.receive(jid,row,m,remote)
+            if state=="completed":
+                if observe_only:
+                    self._phase(jid,"output_ready");return "output_ready"
+                return self.receive(jid,row,m,remote)
             raise DispatchError("Unknown worker state")
     def _validate(self,remote,row,m):
         if (remote.get("attempt_id")!=row["attempt_id"] or remote.get("job_id")!=row["job_id"] or
