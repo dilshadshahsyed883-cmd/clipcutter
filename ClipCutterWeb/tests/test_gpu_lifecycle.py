@@ -53,7 +53,7 @@ class Tests(unittest.TestCase):
         self.api.item.update(state="running",ready=True)
         group=self.api.group()
         group.pop("scheduled_scaling_enabled")
-        group["scheduled-scaling-enabled"]=False
+        group.update({"scheduled-scaling-enabled":True,"scaling-actions":[]})
         with patch.object(self.api,"group",return_value=group):
             self.assertEqual(self.tick(),"ready")
         self.assertEqual(self.api.posts,[])
@@ -65,11 +65,12 @@ class Tests(unittest.TestCase):
         group=self.api.group()
         group.pop("scheduled_scaling_enabled")
         for fields in ({}, {"scheduled-scaling-enabled":True},
+                       {"scheduled-scaling-enabled":True,"scaling-actions":[{"cron":"0 0 * * *","replicas":0}]},
                        {"scheduled-scaling-enabled":None},
                        {"scheduled-scaling-enabled":0},
                        {"scheduled-scaling-enabled":False,"scheduled_scaling_enabled":True}):
             with self.subTest(fields=fields), patch.object(self.api,"group",return_value={**group,**fields}):
-                self.assertEqual(self.tick(),"dedicated_group_or_image_mismatch")
+                self.assertEqual(self.tick(),"scheduled_scaling_active_or_unverified")
         self.assertEqual(self.api.posts,[])
 
     def test_intake_barrier_and_start_journal(self):
