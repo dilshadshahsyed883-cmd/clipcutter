@@ -32,3 +32,10 @@ class StudioLayoutTests(unittest.TestCase):
         self.assertGreater(html.index('id="gpu-capability"'),html.index("Worker status"))
         for action in ("start","stop","pause","resume","retry"):
             self.assertIn('id="gpu-'+action+'" disabled',html)
+
+    def test_delete_without_browser_popup(self):
+        js=(ROOT/"app/static/studio.js").read_text()
+        self.assertNotIn("confirm(",js)
+        self.assertIn('await api("/requests/"+job.id,"DELETE")',js)
+        self.assertIn("deleting.has(job.id)",js)
+        self.assertIn("deleted.add(job.id)",js)
