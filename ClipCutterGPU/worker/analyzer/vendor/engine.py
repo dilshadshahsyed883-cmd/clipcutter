@@ -29,6 +29,8 @@ class Engine:
         det_provider=self.det.get_providers()[0]; rec_provider=self.rec.get_providers()[0]
         if provider!='CPUExecutionProvider' and (det_provider!=provider or rec_provider!=provider):
             raise RuntimeError('Analyzer CUDA session fell back to CPU')
+        if gpu:
+            self.det.disable_fallback(); self.rec.disable_fallback()
         self.device=det_provider; self.gpu=det_provider!='CPUExecutionProvider'
         if gpu and not self.gpu: self.warning='No compatible GPU provider; using CPU'
     def get(self,image):

@@ -8,3 +8,5 @@
 **/*.onnx
 **/*.pt
 **/*.env
+!tests/
+!tests/**

@@ -51,6 +51,8 @@ def open_session(path, providers: list[str]):
     session = onnxruntime.InferenceSession(str(path), sess_options=options, providers=providers)
     if providers[0] == "CUDAExecutionProvider" and session.get_providers()[0] != "CUDAExecutionProvider":
         raise RuntimeError("CUDA session failed; refusing CPU fallback")
+    if providers[0] == "CUDAExecutionProvider":
+        session.disable_fallback()
     return session
 
 
