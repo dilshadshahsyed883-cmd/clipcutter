@@ -280,12 +280,13 @@
      picker.replaceChildren(new Option("Select a request",""));for(const job of complete)picker.add(new Option((job.identity_name?job.identity_name+" · ":"")+job.id.slice(0,8),job.id));if([...picker.options].some(o=>o.value===prior))picker.value=prior;
      if(!data.requests.some(item=>!deleted.has(item.id))){const tr=document.createElement("tr"),td=put("td","No requests yet.");td.colSpan=5;tr.append(td);rows.append(tr);}
      for(const job of data.requests.filter(item=>!deleted.has(item.id))){const tr=document.createElement("tr");tr.dataset.requestId=job.id;
-       [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
+       const gpuUploading=job.state==="ready"&&job.message.startsWith("GPU uploading:");
+       [job.id.slice(0,8),gpuUploading?"Uploading to GPU":job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:")))actions.append(button("Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
-       if(["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
+       if(!gpuUploading&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
          const remove=button(deleting.has(job.id)?"Deleting…":"Delete",async()=>{
            if(deleting.has(job.id)||deleted.has(job.id))return;
            deleting.add(job.id);remove.disabled=true;remove.textContent="Deleting…";
