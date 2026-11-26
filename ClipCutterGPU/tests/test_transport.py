@@ -26,7 +26,7 @@ class TransportTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.a="c"*32
-        self.w=Worker(self.root,lambda:True,launch=launch);self.addCleanup(self.w.shutdown)
+        self.w=Worker(self.root,lambda:True,launch=launch,concurrency=1);self.addCleanup(self.w.shutdown)
     def stage(self):
         self.w.create(self.a,manifest())
         self.w.put(self.a,"source.video",0,VIDEO,sha(VIDEO))
@@ -86,6 +86,35 @@ class TransportTests(unittest.TestCase):
         second=Worker(self.root,lambda:True,launch=launch)
         self.assertEqual(second.snapshot(self.a)["state"],"failed")
         self.assertEqual(second.start(self.a)["state"],"failed")
+    def test_two_slots_and_independent_preload(self):
+        entered=Event();release=Event()
+        def slow(a,root,action):
+            if self.w.metrics()["active_renders"]==2:entered.set()
+            release.wait(3)
+            launch(a,root,action)
+        self.w.shutdown()
+        self.w=Worker(self.root,lambda:True,launch=slow,concurrency=2)
+        self.addCleanup(self.w.shutdown)
+        ids=["c"*32,"d"*32,"e"*32]
+        try:
+            for a in ids:
+                self.w.create(a,manifest())
+                self.w.put(a,"source.video",0,VIDEO,sha(VIDEO))
+            self.w.start(ids[0]);self.w.start(ids[1])
+            self.assertTrue(entered.wait(2))
+            metrics=self.w.metrics()
+            self.assertEqual((metrics["active_renders"],metrics["staging"],metrics["concurrency"]),(2,1,2))
+            with self.assertRaises(ApiError) as cm:self.w.start(ids[2])
+            self.assertEqual(cm.exception.code,429)
+            self.assertEqual(self.w.cancel(ids[2])["state"],"cancelled")
+        finally:release.set()
+        for a in ids[:2]:
+            for _ in range(300):
+                if self.w.snapshot(a)["state"]=="completed":break
+                time.sleep(.01)
+            self.assertEqual(self.w.snapshot(a)["state"],"completed")
+        self.assertEqual(self.w.metrics()["undelivered"],2)
+
     def test_running_cancel_and_single_slot(self):
         entered=Event();release=Event()
         def slow(a,root,action):
