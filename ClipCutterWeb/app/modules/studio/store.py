@@ -84,7 +84,7 @@ class Store:
             if count>=500: raise HTTPException(409,"Pending request limit reached")
             jid=uuid4().hex
             c.execute("INSERT INTO requests VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (jid,req.request_id,self.owner,req.settings.kind,payload,"awaiting_input",now,now,None,"Saved; Drive input has not been verified"))
+                (jid,req.request_id,self.owner,req.settings.kind,payload,"awaiting_input",now,now,None,("Saved; YouTube input has not been verified" if req.input.source_kind=="youtube" else "Saved; Drive input has not been verified")))
             return self.public(c.execute("SELECT * FROM requests WHERE id=?",(jid,)).fetchone())
 
     def public(self,row):

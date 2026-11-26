@@ -26,11 +26,21 @@
    $("add-range").onclick=()=>fields($("range-list"),["Start (s)","End (s)"],[0,2],1000);
    $("add-range").click();mode.onchange=sync;form.elements.framing.onchange=sync;strict.onchange=sync;sync();
  }else $("add-region").onclick=()=>fields($("region-list"),["X","Y","Width","Height"],[0,0,.25,.25],32);
+ function syncSource(){
+   const yt=form.elements.source_kind.value==="youtube";
+   form.elements.source.placeholder=yt?"https://www.youtube.com/watch?v=…":"https://drive.google.com/…";
+   if(kind==="extractor"){
+     const audio=form.elements.include_audio;
+     if(yt)audio.value="false";
+     audio.disabled=yt;
+   }
+ }
+ form.elements.source_kind.addEventListener("change",syncSource);syncSource();
  function payload(){
    const f=new FormData(form), get=k=>f.get(k), num=k=>Number(get(k)), bool=k=>get(k)==="true", opt=k=>String(get(k)||"").trim()||null;
    const input={source:String(get("source")).trim(),source_kind:get("source_kind"),output_folder:opt("output_folder")};
    let settings={kind,reference_link:opt("reference_link")};
-   if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
+   if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:input.source_kind==="youtube"?false:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
    else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
    return {input,settings};
  }
@@ -97,7 +107,7 @@
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
-       if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&job.message.startsWith("Drive intake:")))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Drive intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
+       if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:"))))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
        tr.append(actions);rows.append(tr);}
    }catch(err){status.textContent="Refresh failed: "+err.message;}finally{refreshing=false;}

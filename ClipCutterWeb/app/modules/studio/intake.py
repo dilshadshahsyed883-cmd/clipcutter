@@ -13,6 +13,7 @@ import zipfile
 import zlib
 from fastapi import HTTPException
 from .store import safe_dir
+from . import youtube
 
 LIMIT = 4 * 1024**3
 JOB_LIMIT = 20 * 1024**3
@@ -158,10 +159,12 @@ def stage(store, jid, bridge=None):
             job=store.get(jid)
             if job["state"] not in ("awaiting_input","staging","failed"):
                 return
-            if job["state"]=="failed" and not job["message"].startswith("Drive intake:"):
+            if job["state"]=="failed" and not job["message"].startswith(("Drive intake:","YouTube intake:")):
                 return
+            is_youtube=job["input"]["source_kind"]=="youtube"
+            label="YouTube" if is_youtube else "Drive"
             if job["state"]!="staging":
-                store.transition(jid,job["state"],"staging","Discovering Drive input")
+                store.transition(jid,job["state"],"staging","Discovering "+label+" input")
         parent=safe_dir(store.root/"inputs")
         tmp=parent/(jid+".partial")
         final=parent/jid
@@ -172,11 +175,13 @@ def stage(store, jid, bridge=None):
                     shutil.rmtree(p)
             safe_dir(tmp)
             kind="zip" if job["input"]["source_kind"]=="zip" else "video"
-            sources=[("source",job["input"]["source"],kind)]
+            sources=[] if is_youtube else [("source",job["input"]["source"],kind)]
             if job["settings"].get("reference_link"):
                 sources.append(("reference",job["settings"]["reference_link"],"image"))
             plan=[(role,k,row) for role,link,k in sources
                   for row in retry(lambda:bridge.discover(link,k))]
+            if is_youtube:
+                plan.insert(0,("source","youtube",{"id":job["input"]["source"].split("=")[-1],"size":0}))
             if len(plan)>200 or sum(row["size"] for _,_,row in plan)>JOB_LIMIT:
                 raise RuntimeError("Input exceeds job limits")
             manifest=[]; total=0
@@ -185,13 +190,17 @@ def stage(store, jid, bridge=None):
                 def download():
                     part.unlink(missing_ok=True)
                     return bridge.request("download",{"row":row,"kind":k},part,k,JOB_LIMIT-total)
-                meta=retry(download)
+                if k=="youtube":
+                    store.intake_progress(jid,0,"Downloading YouTube video (1080p maximum, no audio)")
+                    meta=youtube.download(store,job["input"]["source"],part,JOB_LIMIT-total)
+                else:
+                    meta=retry(download)
                 suffix=Path(meta["name"]).suffix.lower()
-                verify_format(part,k,suffix)
+                verify_format(part,"video" if k=="youtube" else k,suffix)
                 name=f"{role}-{index:04d}{suffix}"
                 part.rename(tmp/name)
                 total+=meta["size"]
-                manifest.append({"role":role,"drive_id":row["id"],"file":name,
+                manifest.append({"role":role,("youtube_id" if k=="youtube" else "drive_id"):row["id"],"file":name,
                                  "size":meta["size"],"sha256":meta["sha256"],"md5":meta["md5"],"original_name":meta["name"]})
                 store.intake_progress(jid, min(99,round(index/len(plan)*100,1)),
                                       f"Verified {index}/{len(plan)} input files")
@@ -206,10 +215,10 @@ def stage(store, jid, bridge=None):
                 from .batch import expand
                 expand(store,jid,final,manifest)
             else:
-                store.transition(jid,"staging","ready","Drive inputs verified",100)
+                store.transition(jid,"staging","ready",("YouTube inputs verified; GPU dispatch not supported yet" if is_youtube else "Drive inputs verified"),100)
         except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException,NotImplementedError,EOFError,zlib.error) as exc:
             if tmp.exists():
                 shutil.rmtree(tmp)
             detail=str(exc) if type(exc) in (RuntimeError,Retryable) else "Input verification or storage operation failed"
             if store.get(jid)["state"]=="staging":
-                store.transition(jid,"staging","failed","Drive intake: "+detail[:300])
+                store.transition(jid,"staging","failed",label+" intake: "+detail[:300])
