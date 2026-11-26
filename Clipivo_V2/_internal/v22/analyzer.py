@@ -6,7 +6,10 @@ from .engine import Engine,unit
 from .filters import filter_observations, diverse_refs
 
 def atomic_json(path,data):
-    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_suffix('.tmp'); tmp.write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding='utf-8'); os.replace(tmp,path)
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);tmp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+    try:
+        tmp.write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding='utf-8');os.replace(tmp,path)
+    finally:tmp.unlink(missing_ok=True)
 
 def intervals(samples,duration,step):
     # Each positive sample represents its surrounding sampling cell, not an exact boundary.
@@ -18,12 +21,32 @@ def intervals(samples,duration,step):
         else: out.append([a,b])
     return [[round(a,3),round(b,3)] for a,b in out]
 
-def assign(groups,embedding,used,threshold):
+def box_iou(a,b):
+    x=max(a[0],b[0]);y=max(a[1],b[1]);X=min(a[2],b[2]);Y=min(a[3],b[3])
+    intersect=max(0,X-x)*max(0,Y-y)
+    union=max(0,a[2]-a[0])*max(0,a[3]-a[1])+max(0,b[2]-b[0])*max(0,b[3]-b[1])-intersect
+    return intersect/union if union>0 else 0.
+
+def assign(groups,embedding,used,threshold,*,box=None,timestamp=None,step=None):
     candidates=[(float(np.dot(unit(g['_sum']),embedding)),i) for i,g in enumerate(groups) if np.linalg.norm(g['_sum'])>1e-8]
     candidates.sort(key=lambda pair:(-pair[0],pair[1]))
     score,i=candidates[0] if candidates else (-1,-1)
     runner=candidates[1][0] if len(candidates)>1 else -1
     if i not in used and score>=threshold and score-runner>=.08: return i
+    # Spatial continuity is only a tie-breaker between *recent* plausible
+    # embedding matches. It is not an identity confirmation or interpolation.
+    if box is not None and timestamp is not None and step is not None:
+        spatial=[]
+        for similarity,index in candidates:
+            if index in used or similarity<threshold:continue
+            obs=groups[index].get('observations',[])
+            if not obs:continue
+            last=obs[-1]
+            if 'box_norm' in last and 0<timestamp-last['time']<=step*1.5+.001:
+                spatial.append((box_iou(box,last['box_norm']),index))
+        spatial.sort(key=lambda pair:(-pair[0],pair[1]))
+        if spatial and spatial[0][0]>=.35 and spatial[0][0]-(spatial[1][0] if len(spatial)>1 else 0)>=.15:
+            index=spatial[0][1];groups[index]['identity_status']='uncertain';return index
     groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
 def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True):
@@ -48,15 +71,16 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
             observed+=1; used=set()
             boxes=[]; h,w=img.shape[:2]
             for e,crop,q,box,confidence in engine.get(img):
-                i=assign(groups,e,used,threshold); used.add(i); g=groups[i]; g['_sum']+=e
+                x,y,X,Y=box; normalized=[x/w,y/h,X/w,Y/h]
+                i=assign(groups,e,used,threshold,box=normalized,timestamp=t,step=step); used.add(i); g=groups[i]; g['_sum']+=e
                 refdir=refs/g['id']; refdir.mkdir(exist_ok=True)
                 # Keep each sampled face so groups can be corrected after analysis.
                 path=refdir/f'{observed:07d}.jpg'; ok,data=cv2.imencode('.jpg',crop)
                 if not ok: raise RuntimeError('Could not encode reference crop')
                 path.write_bytes(data.tobytes()); rel=path.relative_to(folder).as_posix()
-                x,y,X,Y=box; sig=cv2.resize(cv2.cvtColor(crop,cv2.COLOR_BGR2GRAY),(8,8)).ravel().tolist()
-                g['observations'].append({'time':round(t,3),'image':rel,'quality':q,'embedding':e.tolist(),'box_norm':[x/w,y/h,X/w,Y/h],'face_size':min(X-x,Y-y),'confidence':confidence,'signature':sig})
-                boxes.append((g['id'],g['name'],[x/w,y/h,X/w,Y/h]))
+                sig=cv2.resize(cv2.cvtColor(crop,cv2.COLOR_BGR2GRAY),(8,8)).ravel().tolist()
+                g['observations'].append({'time':round(t,3),'image':rel,'quality':q,'embedding':e.tolist(),'box_norm':normalized,'face_size':min(X-x,Y-y),'confidence':confidence,'signature':sig})
+                boxes.append((g['id'],g['name'],normalized))
             if live and time.monotonic()-last_live>=.25:
                 last_live=time.monotonic()
                 view={'duration':max(duration,t+step),'sample_interval':step,'filters':filters or {},'people':[dict(id=g['id'],name=g['name'],ignored=False,identity_status=g['identity_status'],observations=g['observations']) for g in groups]}
@@ -85,14 +109,22 @@ def refresh(data):
         g['references']=diverse_refs(active or g['observations'])
 
 def save_project(folder,data):
-    refresh(data); folder=Path(folder); atomic_json(folder/'analysis.json',data)
-    with (folder/'timeline.csv').open('w',newline='',encoding='utf-8-sig') as f:
-        w=csv.writer(f); w.writerow(['person_id','person','start_seconds','end_seconds'])
-        for g in data['people']:
-            if not g.get('ignored'):
-                for a,b in g['segments']: w.writerow([g['id'],g['name'],a,b])
-    rows=sorted((a,b,g['name']) for g in data['people'] if not g.get('ignored') for a,b in g['segments'])
-    (folder/'timeline.txt').write_text('\n'.join(f'{a:.3f} - {b:.3f} | {n}' for a,b,n in rows),encoding='utf-8')
+    """Stage all outputs before publishing; analysis.json is authoritative."""
+    refresh(data);folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+    token=uuid.uuid4().hex
+    targets={name:folder/(name+'.'+token+'.tmp') for name in ('analysis.json','timeline.csv','timeline.txt')}
+    try:
+        targets['analysis.json'].write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding='utf-8')
+        with targets['timeline.csv'].open('w',newline='',encoding='utf-8-sig') as f:
+            w=csv.writer(f);w.writerow(['person_id','person','start_seconds','end_seconds'])
+            for g in data['people']:
+                if not g.get('ignored'):
+                    for a,b in g['segments']:w.writerow([g['id'],g['name'],a,b])
+        rows=sorted((a,b,g['name']) for g in data['people'] if not g.get('ignored') for a,b in g['segments'])
+        targets['timeline.txt'].write_text('\n'.join(f'{a:.3f} - {b:.3f} | {n}' for a,b,n in rows),encoding='utf-8')
+        for name in ('timeline.csv','timeline.txt','analysis.json'):os.replace(targets[name],folder/name)
+    finally:
+        for tmp in targets.values():tmp.unlink(missing_ok=True)
 
 def merge_groups(data, ids):
     gs=[g for g in data['people'] if g['id'] in ids]
