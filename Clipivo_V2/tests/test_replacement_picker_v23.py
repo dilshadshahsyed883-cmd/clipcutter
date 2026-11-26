@@ -132,3 +132,30 @@ def test_index_reuses_unchanged(tmp_path,real_media,monkeypatch):
         pytest.fail('unchanged video was reindexed')
     monkeypatch.setattr(footage,'inspect_video',unexpected)
     assert Index(index.path).index(tmp_path)==first
+
+
+def test_no_reuse_is_per_source_file_not_per_scene():
+    ref = media('reference.mp4', 6)
+    a = media('source-a.mp4', 8)
+    a['scenes'] = [scene(0, 4), scene(4, 8)]
+    b = media('source-b.mp4', 3)
+    for seed in range(1, 51):
+        plan = approve(build_picked_plan(ref, [a,b], 2, 4, seed=seed, allow_repeats=False))
+        rows = expand_plan(plan)['rows']
+        assert len(rows) == 2
+        assert {r['selected']['path'] for r in rows} == {'source-a.mp4','source-b.mp4'}
+    with pytest.raises(ValueError, match='cannot be covered'):
+        build_picked_plan(ref, [a], 2, 4, allow_repeats=False)
+    plan = approve(build_picked_plan(ref, [a], 2, 4, allow_repeats=True))
+    plan['picker']['allow_repeats'] = False
+    with pytest.raises(ValueError, match='Source reuse'):
+        expand_plan(plan)
+
+
+def test_cancel_selection_and_match():
+    ref = media('reference.mp4', 4, ['A'])
+    sources = [media('source.mp4', 4, ['A'])]
+    with pytest.raises(InterruptedError):
+        build_picked_plan(ref, sources, 2, 4, cancel=lambda:True)
+    with pytest.raises(InterruptedError):
+        build_plan(ref, sources, cancel=lambda:True)
