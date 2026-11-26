@@ -58,3 +58,8 @@ Later clip-selection, min/max export, same-person gap-fill and CapCut speed exte
 - Full responsiveness/performance/upgrade acceptance across the requested V2.3 scope.
 
 This is a source checkpoint, not a completed or certified release.
+
+
+## Focused 2.3.1 tests actually run
+
+`PYTHONPATH=. python -m pytest -q tests/test_automation_231.py` — 7 passed in 0.07s in an isolated Linux mirror. The exact Git blob hashes of analysis_library.py, automation.py and the test file were verified. Real SQLite and source file metadata were used; unrelated model, storage, video/planner imports were stubbed, and project loading was mocked for the lookup test. The automated generation pipeline itself, UI, actual inference and entire regression suite were not executed. PySide6 and ONNX Runtime were unavailable. No build or workflow.
