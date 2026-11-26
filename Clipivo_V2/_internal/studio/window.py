@@ -24,7 +24,7 @@ class SettingsPage(QWidget):
         self.size=QComboBox();self.size.addItems(['320','640','960','1280']);self.size.setCurrentText(str(cfg.get('size',640)));form.addRow('Detector resolution',self.size)
         self.capcut_drafts=QLineEdit(cfg.get('capcut_drafts',''));row=QHBoxLayout();row.addWidget(self.capcut_drafts);button('Browse',self.browse_drafts,row);form.addRow('CapCut drafts folder (blank = auto)',row)
         self.notice=QLabel('Default InsightFace buffalo_l models: non-commercial research use. Commercial use needs separately licensed weights. This build supports compatible ONNX file replacement; it does not bundle model weights.\n\nFace models are reused from your Clipivo installation when compatible. The original installed application remains independent.\n\nGPU choice follows the installed ONNX Runtime provider: Windows DirectML by default; CUDA requires the compatible GPU runtime and drivers. GPU utilization is not reported unless measured.');self.notice.setWordWrap(True);l.addWidget(self.notice)
-        row=QHBoxLayout();l.addLayout(row);button('Save analysis settings',self.save,row);button('Extraction / media settings',lambda:window.open_settings(),row);button('Open data folder',self.open_data,row);l.addStretch();self.detect()
+        row=QHBoxLayout();l.addLayout(row);button('Save analysis settings',self.save,row);button('Extraction / media settings',lambda:window.open_settings(),row);button('Open data folder',self.open_data,row);l.addStretch()
     def browse_drafts(self):
         p=QFileDialog.getExistingDirectory(self,'CapCut Projects / com.lveditor.draft folder')
         if p:self.capcut_drafts.setText(p)
@@ -32,10 +32,11 @@ class SettingsPage(QWidget):
         p=QFileDialog.getExistingDirectory(self,'Folder containing det_10g.onnx and w600k_r50.onnx')
         if p:self.models.setText(p)
     def detect(self):
+        if self.custom.isChecked():return QMessageBox.information(self,'Custom model','Choose your licensed model folder with Browse.')
         found=find_models(self.models.text()) or find_face_models()
         if found:self.models.setText(str(found))
     def save(self):
-        if self.window.analyzer_page.busy:return QMessageBox.warning(self,'Settings','Wait for person analysis to finish before changing models.')
+        if self.window._video_job_running() or self.window.batch_page.is_running():return QMessageBox.warning(self,'Settings','Wait for person analysis to finish before changing models.')
         if self.clip_min.value()>self.clip_max.value():return QMessageBox.warning(self,'Clip limits','Minimum cannot exceed maximum.')
         save_settings({'clip_limits':dict(enabled=self.limits_on.isChecked(),minimum=self.clip_min.value(),maximum=self.clip_max.value())})
         save_settings(dict(capcut_drafts=self.capcut_drafts.text(),models=self.models.text(),custom_models=self.custom.isChecked(),gpu=self.gpu.isChecked(),step=self.step.value(),threshold=self.threshold.value(),size=int(self.size.currentText())))
