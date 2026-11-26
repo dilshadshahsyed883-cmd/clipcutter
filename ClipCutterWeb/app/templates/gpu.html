@@ -22,7 +22,7 @@
           <label>Download window (seconds)<input name="image_pull_seconds" type="number" min="5" max="600" step="1" required></label>
           <label>Maximum reallocations per cycle<input name="salad_max_reallocations" type="number" min="0" max="3" step="1" required></label>
           <label>Inter-attempt cooldown (seconds)<input name="salad_reallocate_cooldown" type="number" min="5" max="600" step="1" required></label>
-          <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2" disabled>2 (not supported by current worker)</option></select></label>
+          <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2">2 (requires approved two-slot worker)</option></select></label>
         </div>
         <details class="studio-advanced"><summary>Automation rules</summary><p id="gpu-rule" class="studio-note" aria-live="polite"></p><p class="studio-note">Auto-stop: 60 seconds after queue and verified deliveries finish.</p></details>
         <div class="studio-actions"><button type="submit" id="gpu-save">Save Automation Settings</button><span id="gpu-save-status" role="status"></span></div>
