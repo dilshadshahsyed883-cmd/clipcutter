@@ -358,6 +358,8 @@ If Windows compilation is unavailable, provide a fully runnable source package a
 
 Do not bundle virtual environments, cache directories, unnecessary development artifacts or large redundant models in the ZIP.
 
+Windows source launch must create/reuse its Python environment and installed dependencies only under `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3`. Do not create or reuse a source-local `.venv` or `venv`. If LocalAppData is unavailable, fail clearly instead of falling back to a relative path. Existing local virtual environments are ignored and are not automatically deleted. Replacing the application folder must not remove the AppData runtime.
+
 ## 14. Testing and Quality Assurance
 
 Before delivery:

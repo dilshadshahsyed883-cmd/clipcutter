@@ -1,3 +1,8 @@
+# V2.3 source runtime policy — 26 November 2026
+
+- Enforce the existing LocalAppData source runtime path; stop if LOCALAPPDATA is unset and suppress application bytecode cache writes during source launch.
+- Document that legacy source-local virtual environments are ignored, not automatically removed, and must never be included in source ZIPs. Static launcher review only; Windows launch not tested. No EXE build or workflow changes.
+
 # V2.3 combined integration — 26 November 2026
 
 - Integrated exact Agent 1, Agent 2 and Agent 3 source checkpoints, retaining original extractor and six workspaces.

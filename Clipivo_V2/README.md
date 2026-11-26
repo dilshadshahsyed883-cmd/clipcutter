@@ -6,7 +6,7 @@ This is source, not a compiled Windows executable. Integration is incomplete and
 
 ## Windows source launch
 
-Install x64 Python 3.11 or newer with the Python launcher. Extract or clone the complete folder. Run `START_V2.bat`. The first source launch installs dependencies in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3`; Internet access is required. The ZIP/repository does not contain a virtual environment.
+Install x64 Python 3.11 or newer with the Python launcher. Extract or clone the complete folder. Run `START_V2.bat`. The first source launch installs dependencies in `%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3`; Internet access is required. The ZIP/repository does not contain a virtual environment. Subsequent launches reuse the AppData runtime, including after replacing the source folder. Never create or use `.venv` or `venv` inside `Clipivo_V2`. If a previous version left one there, close Clipivo and remove that old virtual-environment folder manually if no longer needed; the launcher does not migrate or delete it. If `LOCALAPPDATA` is unavailable, source startup stops rather than creating a local environment.
 
 Run `BUILD_EXE.bat` on Windows to attempt a PyInstaller one-folder executable build. Keep `dist\Clipivo\Clipivo.exe` and its `_internal` directory together. This build has not been run or verified on Windows. It does not include model weights, VLC or Node; missing dependencies may require first-use installation. Native playback uses VLC; without VLC, extraction remains accessible but full upstream playback is unavailable. Person Analyzer uses an OpenCV silent preview.
 

@@ -12,7 +12,13 @@ if errorlevel 1 (
  pause
  exit /b 1
 )
+rem Source runtime must stay outside the application folder. Never use a local .venv.
+if not defined LOCALAPPDATA (
+ echo LOCALAPPDATA is not set. Cannot create the Clipivo runtime safely.
+ goto :failed
+)
 set "CLIPIVO_RUNTIME=%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3"
+set "PYTHONDONTWRITEBYTECODE=1"
 if not exist "%CLIPIVO_RUNTIME%\Scripts\python.exe" (
  %CLIPIVO_PYTHON% -m venv "%CLIPIVO_RUNTIME%"
  if errorlevel 1 goto :failed
