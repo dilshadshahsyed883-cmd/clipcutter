@@ -1,0 +1,38 @@
+name: ClipCutter GPU private preflight (no build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_drive_id:
+        description: Owner-supplied public Drive model ZIP file ID (optional with model URL secret)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify private registry credentials
+        env:
+          CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
+        run: python3 ClipCutterGPU/verify-private-package.py
+      - name: Install model transfer dependency
+        run: python3 -m pip install --disable-pip-version-check gdown==5.2.0
+      - name: Stage and verify privately supplied models
+        env:
+          CLIPCUTTER_MODEL_DRIVE_ID: ${{ inputs.model_drive_id }}
+          CLIPCUTTER_MODEL_ZIP_URL: ${{ secrets.CLIPCUTTER_MODEL_ZIP_URL }}
+        run: python3 ClipCutterGPU/prepare-models.py
+      - name: Confirm preflight only
+        run: echo 'Private package and model supply verified. No build, publish or GPU start.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary model files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/clipcutter-authorized-models"
