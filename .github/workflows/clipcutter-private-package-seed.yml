@@ -1,0 +1,51 @@
+name: Initialize ClipCutter private test package (no build)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/clipcutter-private-package-seed.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: clipcutter-private-package-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Copy existing model-free image without building
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends skopeo
+          authdir="$(mktemp -d)"
+          export REGISTRY_AUTH_FILE="$authdir/auth.json"
+          trap 'rm -rf "$authdir"' EXIT
+          printf '%s' "$GHCR_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+          digest=sha256:4af797585d1572a2743799bbed8e6a3e211d93e63d720a0344afcb4a0e7fa237
+          src="docker://ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate@$digest"
+          dst="docker://ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:seed"
+          actual="$(skopeo inspect --format '{{.Digest}}' "$src")"
+          test "$actual" = "$digest"
+          # Do not overwrite an existing seed tag.
+          if skopeo inspect --format '{{.Digest}}' "$dst" > "$authdir/existing" 2> "$authdir/err"; then
+            test "$(cat "$authdir/existing")" = "$digest" || { echo "Different seed already exists; refusing overwrite"; exit 1; }
+          else
+            # Only a missing manifest/package permits a new seed.
+            grep -Eiq 'manifest unknown|name unknown|manifest.*not found|name.*not found' "$authdir/err" || { cat "$authdir/err" >&2; exit 1; }
+            skopeo copy --all --preserve-digests "$src" "$dst"
+          fi
+          test "$(skopeo inspect --format '{{.Digest}}' "$dst")" = "$digest"
+          printf 'Seed copied and digest verified: %s\n\nNo models added, no image build, no Salad deployment. Owner must independently verify package visibility is Private before any model-inclusive release.\n' "$digest" >> "$GITHUB_STEP_SUMMARY"
