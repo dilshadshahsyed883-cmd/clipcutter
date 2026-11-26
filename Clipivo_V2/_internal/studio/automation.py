@@ -72,6 +72,7 @@ def generate(reference_path, folder, cfg, store, weights, limits, cancel, progre
               and Path(m["path"]).resolve()!=reference_path]
     if not selected:raise ValueError("No eligible alternative videos found in the selected folder.")
     media=[]
+    stamps={}
     warnings=[]
     for n,m in enumerate(selected):
         check()
@@ -82,10 +83,13 @@ def generate(reference_path, folder, cfg, store, weights, limits, cancel, progre
             raise ValueError("Footage changed during processing: "+path.name)
         item=copy.deepcopy(m)
         for scene in item["scenes"]:link_people(scene,data,valid_ids,True)
-        media.append(item)
+        media.append(item);stamps[str(path)]=stamp
         progress("Footage identities",n+1,len(selected))
     check()
     plan=build_plan(reference,media,weights,cancel=cancel,**limits)
+    check()
+    if source_stamp(reference_path)!=initial or any(source_stamp(path)!=stamp for path,stamp in stamps.items()):
+        raise ValueError('Media changed during timeline generation; generate again.')
     missing=sum(not r.get("selected") for r in plan["rows"])
     if missing:warnings.append(f"{missing} scenes need manual replacement or verified person profiles.")
     plan["warnings"]=warnings

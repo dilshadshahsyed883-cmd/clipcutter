@@ -146,6 +146,7 @@ class AnalyzerPage(QWidget):
         self.analyze_button.setEnabled(True);self.cancel_button.setEnabled(False)
         self.window.people_page.setEnabled(True)
         self.refresh();self.seek(self.position)
+        if self.data and self.data.get('cache_warning'):self.stats.setText(self.data['cache_warning'])
     def failed(self,msg):
         self.scanning=False;self.drain_preview()
         if self._active and self._previous is not None:
@@ -264,16 +265,22 @@ class AnalyzerPage(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
     def to_replacement(self):
         if not self.editable():return
+        try:stamp=source_stamp(self.video)
+        except (OSError,ValueError) as exc:return self.failed(str(exc))
         if not self.data.get('source_stamp'):
-            self.stats.setText('Legacy project: verify the original source and reanalyze to enable automatic reuse. Manual identity transfer remains available.')
-        elif source_stamp(self.video)!=self.data['source_stamp']:
+            if QMessageBox.question(self,'Legacy project','Confirm the original video is unchanged since this saved analysis. This links identities for this session only; automatic reuse requires a new analysis.',QMessageBox.Yes|QMessageBox.Cancel)!=QMessageBox.Yes:return
+        elif stamp!=self.data['source_stamp']:
             return self.failed('Source changed since analysis; reanalyze before transfer.')
         page=self.window.replacement_page
         if page.busy:return
         self.window._select_page(2)
-        page.set_reference(self.video)
+        page.set_reference(self.video,analysis_data=self.data)
     def to_extractor(self):
         if not self.editable() or not self.selected():return
+        try:
+            if self.data.get('source_stamp') and source_stamp(self.video)!=self.data['source_stamp']:
+                return self.failed('Source changed since analysis; reanalyze before transfer.')
+        except (OSError,ValueError) as exc:return self.failed(str(exc))
         from core.models import ClipRange
         from .picker import constrain_ranges
         cfg=load_settings().get('clip_limits',{})

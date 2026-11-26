@@ -1,6 +1,7 @@
 """Conservative matching; unknown groups remain anonymous until reviewed."""
 from pathlib import Path
 import numpy as np
+import sqlite3
 from v22.engine import unit
 from v22.analyzer import analyze, save_project, refresh
 
@@ -58,6 +59,7 @@ def match_profiles(data,profiles,threshold=.60,margin=.08):
 
 def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
     from .analysis_library import source_stamp, scan_key, AnalysisLibrary
+    if cancel():raise InterruptedError('Cancelled; no completed project saved')
     stamp=source_stamp(video); scan=scan_key(cfg)
     data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}),engine=engine,persist=False)
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
@@ -70,8 +72,12 @@ def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
         raise ValueError('Source or model configuration changed during analysis; run again.')
     data['source_stamp']=stamp;data['scan_key']=scan
     save_project(folder,data)
-    try:AnalysisLibrary().register(Path(folder)/'analysis.json',data)
-    except (OSError, __import__('sqlite3').Error) as exc:
+    from .storage import root
+    try:
+        if Path(folder).resolve().is_relative_to((root()/'Projects').resolve()):
+            if not AnalysisLibrary().register(Path(folder)/'analysis.json',data):
+                data['cache_warning']='Analysis saved; source changed before cache registration.'
+    except (OSError, sqlite3.Error, ValueError) as exc:
         data['cache_warning']='Analysis saved; automatic lookup unavailable: '+str(exc)
     return data
 

@@ -51,10 +51,10 @@ class AnalysisLibrary:
         with self.connect() as db:
             row = db.execute("SELECT stamp, project FROM projects WHERE source=? AND scan=?",
                              (stamp[0], json.dumps(scan, sort_keys=True))).fetchone()
-        if not row or json.loads(row[0]) != stamp:
-            return None
-        path = Path(row[1])
+        if not row:return None
         try:
+            if json.loads(row[0]) != stamp:return None
+            path = Path(row[1])
             data = open_project(path)
             if data.get("source_stamp") != stamp or data.get("scan_key") != scan:
                 return None

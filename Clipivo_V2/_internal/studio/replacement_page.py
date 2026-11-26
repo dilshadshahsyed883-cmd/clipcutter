@@ -39,7 +39,7 @@ class ReplacementPage(QWidget):
         if self.window._video_job_running() or self.window.batch_page.is_running():return self.error('Wait for the current processing task to finish.')
         self._active=True;self.operation=operation
         for a in self.actions:a.setEnabled(False)
-        self.table.setEnabled(False);self.candidates.setEnabled(False)
+        self.table.setEnabled(False);self.candidates.setEnabled(False);self.advanced.setEnabled(False)
         for w in self.weights.values():w.setEnabled(False)
         self.cancel.setEnabled(True);self.status.setText(operation+'…')
         try:self.task.start(fn)
@@ -49,7 +49,7 @@ class ReplacementPage(QWidget):
             QTimer.singleShot(20,self.finished);return
         self._active=False
         for a in self.actions:a.setEnabled(True)
-        self.table.setEnabled(True);self.candidates.setEnabled(True)
+        self.table.setEnabled(True);self.candidates.setEnabled(True);self.advanced.setEnabled(True)
         for w in self.weights.values():w.setEnabled(True)
         self.cancel.setEnabled(False)
     def progress(self,args):
@@ -60,17 +60,28 @@ class ReplacementPage(QWidget):
     def open_reference(self):
         p,_=QFileDialog.getOpenFileName(self,'Reference video','','Video (*.mp4 *.mkv *.mov *.avi *.webm *.m4v)')
         if p:self.set_reference(p)
-    def set_reference(self,p):
-        from .analysis_library import AnalysisLibrary
+    def set_reference(self,p,analysis_data=None):
+        from .analysis_library import AnalysisLibrary,source_stamp
         from .storage import load_settings
+        import sqlite3
         from .automation import link_people
         cfg=load_settings();store=self.window.character_store
+        supplied=copy.deepcopy(analysis_data) if analysis_data else None
         def work(t):
+            stamp=source_stamp(p)
             ref=inspect_video(p,t.stop.is_set,t.report)
-            cached=AnalysisLibrary().find(p,cfg)
-            if cached:
+            if source_stamp(p)!=stamp:raise ValueError('Reference changed while opening.')
+            if supplied:
+                if Path(supplied['source']).resolve()!=Path(p).resolve() or abs(supplied['duration']-ref['duration'])>max(.25,1/ref['fps']):raise ValueError('Loaded analysis does not match the reference video.')
+                if supplied.get('source_stamp') and supplied['source_stamp']!=stamp:raise ValueError('Loaded analysis is stale.')
+                data=supplied
+            else:
+                try:cached=AnalysisLibrary().find(p,cfg)
+                except (OSError,ValueError,sqlite3.Error):cached=None
+                data=cached[1] if cached else None
+            if data:
                 ids={c.id for c in store.characters()} if store else set()
-                for scene in ref['scenes']:link_people(scene,cached[1],ids)
+                for scene in ref['scenes']:link_people(scene,data,ids)
             return ref
         self.run('Analyze reference',work)
     def choose_footage(self):
@@ -104,13 +115,16 @@ class ReplacementPage(QWidget):
         if p:self.run('Index footage',lambda t:Index().index(p,t.stop.is_set,t.report))
     def done(self,result):
         if self.operation=='Analyze reference':
+            if self.task.stop.is_set():self.status.setText('Cancelled; previous reference preserved.');return
             self.reference=result;self.plan=None
             # Cached analysis is linked in the background before publication.
             self.heading.setText(Path(result['path']).name+f"  •  {len(result['scenes'])} estimated scenes  •  {result['duration']:.2f}s");self.populate();self.show_video(self.original,result['path'],0)
         elif self.operation in ('Match scenes','Pick clips','Generate timeline'):
             if self.task.stop.is_set():
                 self.status.setText('Cancelled; previous plan preserved.');return
-            self.plan=result;self.reference=result['reference'];self.populate()
+            self.plan=result
+            if self.operation=='Generate timeline':self.reference=result['reference']
+            self.populate()
             self.status.setText('Timeline created; approve each clip. '+ ' '.join(result.get('warnings',[])))
         elif self.operation=='Index footage':self.status.setText(f'Index saved: {len(result)} videos. Unchanged videos reuse cached descriptors. Add identity/activity/framing labels before matching.')
         elif self.operation=='CapCut':self.status.setText('Editable draft verified: '+result['folder']+'  •  Open it from CapCut Home → Projects.'+(' CapCut launched.' if result.get('launched') else ' Start CapCut manually.'))
@@ -357,7 +371,12 @@ class ReplacementPage(QWidget):
     def import_identities(self):
         a=self.window.analyzer_page
         if not a.editable() or not a.data:return self.error('Analyze the footage video in Person Analyzer first. Save and match named profiles for cross-video identities.')
-        source=a.data.get('source');m=next((m for m in self.index.all() if m['path']==source),None)
+        source=a.data.get('source')
+        from .analysis_library import source_stamp
+        try:
+            if a.data.get('source_stamp') and source_stamp(source)!=a.data['source_stamp']:return self.error('Source changed since analysis; reanalyze before linking.')
+        except (OSError,ValueError) as exc:return self.error(str(exc))
+        m=next((m for m in self.index.all() if m['path']==source),None)
         if self.reference and self.reference['path']==source:
             for scene in self.reference['scenes']:self.link_scene_people(scene,a.data)
             self.plan=None;self.populate()
