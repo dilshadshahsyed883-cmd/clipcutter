@@ -92,6 +92,12 @@ class Tests(unittest.TestCase):
         self.api.state="stopped"
         self.assertEqual(self.tick(),"stopped")
         self.assertEqual(self.api.posts,[("stop",None)])
+    def test_deleted_requests_do_not_block_idle_stop(self):
+        jid=self.job()
+        with self.store.admission():self.store.delete_request(jid)
+        self.api.state="running";self.api.item.update(state="running",ready=True)
+        self.assertEqual(self.tick(),"idle_countdown")
+        self.assertEqual(self.tick(61),"stop_pending_confirmation")
     def test_idle_reset_on_restart(self):
         self.api.state="running";self.api.item.update(state="running",ready=True)
         self.assertEqual(self.tick(),"idle_countdown")

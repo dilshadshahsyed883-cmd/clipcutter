@@ -4,6 +4,7 @@ Call tick from a single trusted scheduler after deployment/worker approval.
 Never recreate a lost attempt automatically; the VPS keeps verified inputs.
 """
 import fcntl
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -16,6 +17,8 @@ from uuid import uuid4
 import httpx
 from .store import safe_dir
 from .intake import verify_format, RESERVE
+from .eligibility import blocker
+from .drive_delivery import DeliveryError, deliver_one, preflight
 
 CHUNK=8*1024*1024
 MAX_JSON=8*1024*1024
@@ -89,12 +92,30 @@ class WorkerClient:
 class Dispatcher:
     def __init__(self,store,client):
         self.store=store;self.client=client
+        self.delivery_pool=None;self.delivery_future=None;self.delivery_job=None
         with store.connect() as c:
             c.execute("""CREATE TABLE IF NOT EXISTS gpu_attempts(
               job_id TEXT PRIMARY KEY REFERENCES requests(id), attempt_id TEXT UNIQUE NOT NULL,
               manifest TEXT NOT NULL, mapping TEXT NOT NULL, phase TEXT NOT NULL,
               worker_sha TEXT NOT NULL, gateway TEXT NOT NULL, result_sha TEXT,
               review_json TEXT)""")
+    def close(self):
+        if self.delivery_pool:self.delivery_pool.shutdown(wait=True)
+
+    def drive_delivery_tick(self,jid,folder,dest,items):
+        # Large network writes cannot hold the owner admission lock or block queue
+        # controls. The durable intent is committed by the one delivery thread.
+        if self.delivery_future is not None:
+            if self.delivery_job!=jid:raise DeliveryError("Another Drive receipt is pending")
+            if not self.delivery_future.done():return False
+            future=self.delivery_future
+            self.delivery_future=None;self.delivery_job=None
+            return future.result()
+        if self.delivery_pool is None:self.delivery_pool=ThreadPoolExecutor(max_workers=1)
+        self.delivery_job=jid
+        self.delivery_future=self.delivery_pool.submit(deliver_one,self.store,jid,folder,dest,items)
+        return False
+
     def _row(self,jid):
         with self.store.connect() as c:
             self.store.row(c,jid)
@@ -113,7 +134,11 @@ class Dispatcher:
             row=self.store.row(c,jid);request=json.loads(row["payload"]);request["request_id"]=row["request_id"]
             if row["state"]!="ready":raise DispatchError("Drive inputs not ready")
             if self._pending(c):raise DispatchError("All pending Drive intake must finish before dispatch")
-        if request["input"]["source_kind"]!="video":raise DispatchError("ZIP/folder fan-out requires a separate reviewed implementation")
+        reason=blocker(request)
+        if reason:raise DispatchError(reason)
+        if request["input"].get("output_folder"):
+            try:preflight(request["input"]["output_folder"])
+            except DeliveryError as exc:raise DispatchError(str(exc)) from None
         settings=request["settings"]
         if settings["kind"]=="analyzer" and (settings.get("reference_link") or settings.get("reference_uploads")):raise DispatchError("Analyzer profile reference input is not implemented")
         root=safe_dir(self.store.root/"inputs"/jid)
@@ -161,6 +186,8 @@ class Dispatcher:
             a=row["attempt_id"];m=json.loads(row["manifest"])
             if row["phase"]=="new":
                 if not allow_start:return "paused"
+                if m["job"]["request"]["input"]["source_kind"]=="youtube" and "youtube" not in caps.get("source_kinds",[]):
+                    raise DispatchError("Approved worker does not advertise YouTube support")
                 with self.store.connect() as c:
                     if self._pending(c):return "intake_pending"
                 # Persist intent before any remote side effect. If the remote is missing
@@ -272,6 +299,16 @@ class Dispatcher:
                 if item["size"]>MAX_JSON:raise DispatchError("JSON output too large")
                 json.loads(part.read_bytes())
             part.rename(p)
+        folder=m["job"]["request"]["input"].get("output_folder")
+        if folder:
+            try:
+                # Upload at most one artifact per tick. An ambiguous write is
+                # reconciled by metadata only; never repeat an uncertain POST.
+                if not self.drive_delivery_tick(jid,folder,dest,items):return "delivering_drive"
+            except DeliveryError as exc:
+                with self.store.connect() as c:
+                    c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='delivering'",("Drive delivery held: "+str(exc)[:300],int(time.time()),jid,self.store.owner))
+                raise DispatchError(str(exc)) from None
         self.store.publish_verified_outputs(jid,items)
         self._phase(jid,"published",digest)
         # A separate tick acknowledges only after persisted receipt.

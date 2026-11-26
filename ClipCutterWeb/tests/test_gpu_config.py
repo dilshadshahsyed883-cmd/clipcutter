@@ -67,3 +67,6 @@ class GPUWebTests(unittest.TestCase):
         self.assertNotIn("short-secret",invalid.text)
         for action in ("start","stop","retry"):
             self.assertEqual(self._post(API+"/actions/"+action,csrf).status_code,409)
+        self.assertTrue(self._post(API+"/actions/pause",csrf).json()["paused"])
+        self.assertTrue(self.client.get("/api/v1/studio/requests?kind=extractor").json()["paused"])
+        self.assertFalse(self._post(API+"/actions/resume",csrf).json()["paused"])

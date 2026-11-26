@@ -10,6 +10,7 @@ from .store import Store,safe_dir
 from .gpu import GPUStore,group_path
 from .dispatch import Dispatcher,WorkerClient,DispatchError
 from .lifecycle import Lifecycle,SaladAPI,LifecycleError
+from .eligibility import blocker
 
 def authorized(store,cfg=None):
     return (os.environ.get("CLIPCUTTER_SCHEDULER_ENABLED")=="1" and
@@ -42,6 +43,7 @@ class Control:
             c.execute("UPDATE scheduler_control SET paused=?,action=CASE WHEN ?=1 AND action='start' THEN NULL ELSE action END WHERE id=1",(int(paused),int(paused)))
         return self.snapshot()
     def command(self,action,cfg):
+        if action in ("pause","resume"):return self.set_paused(action=="pause")
         if not authorized(self.store,cfg):raise LifecycleError("Scheduler activation gate closed")
         with self.store.admission(),self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -74,7 +76,7 @@ class Scheduler:
         self.dispatch=Dispatcher(store,worker);self.lifecycle=Lifecycle(store,cfg,api,worker)
         self.control=Control(store)
     def close(self):
-        pass  # VPS intake is owned by the independent web-process queue.
+        self.dispatch.close()  # VPS intake is owned by the independent web-process queue.
     def _jobs(self):
         with self.store.connect() as c:
             return [dict(x) for x in c.execute("""SELECT r.id,r.state,r.payload,a.phase FROM requests r
@@ -82,17 +84,20 @@ class Scheduler:
     @staticmethod
     def eligible(row):
         import json
-        p=json.loads(row["payload"]);s=p["settings"]
-        # Do not pay for jobs whose output contract cannot be fulfilled.
-        return (p["input"]["source_kind"]=="video" and not p["input"].get("output_folder")
-            and not(s["kind"]=="analyzer" and (s.get("reference_link") or s.get("reference_uploads"))))
+        return blocker(json.loads(row["payload"])) is None
     def tick(self):
         with self.store.admission():
             rows=self._jobs()
-            # Record unsupported jobs explicitly, retain verified inputs.
+            # Unsupported destinations/worker versions stay ready, not falsely failed.
+            # Their verified VPS inputs can be reused after explicit capability approval.
+            import json
             for row in rows:
-                if row["state"]=="ready" and not row["phase"] and not self.eligible(row):
-                    self.store.transition(row["id"],"ready","failed","GPU: input/output contract not yet supported; staged inputs retained")
+                if row["state"]=="ready" and not row["phase"]:
+                    reason=blocker(json.loads(row["payload"]))
+                    if reason:
+                        message="Verified inputs held: "+reason
+                        with self.store.connect() as c:
+                            c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",(message,int(time.time()),row["id"],self.store.owner,message))
             controls=self.control.snapshot();paused=controls["paused"];action=controls["action"]
             state=self.lifecycle.tick(paused=paused,manual=action)
             clear=action if (action=="start" and state in ("ready","ready_dispatch_blocked","worker_busy") or
@@ -137,6 +142,8 @@ def main():
                     scheduler.control.mark("scheduler_error_reconcile")
                 time.sleep(3)
         finally:
+            with store.connect() as c:
+                c.execute("UPDATE scheduler_control SET heartbeat=0 WHERE id=1")
             scheduler.close();worker.close();api.close()
 
 if __name__=="__main__":main()

@@ -2,7 +2,7 @@
   const $ = id => document.getElementById(id), form = $("gpu-form"), fields = $("gpu-fields");
   const stringKeys = ["salad_organization","salad_project","salad_container_group","worker_gateway"];
   const numberKeys = ["image_pull_threshold","image_pull_seconds","salad_max_reallocations","salad_reallocate_cooldown","parallel"];
-  let csrf = null, saving = false, refreshing = false;
+  let csrf = null, saving = false, refreshing = false, acting = false, configured = false;
   async function api(path, method="GET", data) {
     const headers = {Accept:"application/json"};
     if (method !== "GET") {
@@ -32,22 +32,27 @@
     $("gpu-salad-key-state").textContent=cfg.salad_key_configured?"Key configured":"Key not configured";
     $("gpu-worker-key-state").textContent=cfg.worker_key_configured?"Token configured":"Token not configured";
     $("gpu-capability").textContent=cfg.message;
-    fields.disabled=false; $("gpu-refresh").disabled=!(cfg.group_configured&&cfg.salad_key_configured);
+    configured=Boolean(cfg.group_configured&&cfg.salad_key_configured);
+    fields.disabled=false; $("gpu-refresh").disabled=!configured;
     controls(cfg);
     rule();
   }
   function controls(cfg){
     const enabled=cfg.dispatch_enabled===true,s=cfg.scheduler||{};
     for(const action of ["start","stop","retry","pause","resume"]){
-      $("gpu-"+action).disabled=!enabled||(["start","stop"].includes(action)&&cfg.auto_start)||(action==="pause"&&s.paused)||(action==="resume"&&!s.paused);
+      const queueAction=action==="pause"||action==="resume";
+      $("gpu-"+action).disabled=acting||(!queueAction&&!enabled)||(["start","stop"].includes(action)&&cfg.auto_start)||(action==="pause"&&s.paused)||(action==="resume"&&(!s.paused||s.action==="stop"));
     }
     $("gpu-capability").textContent=(enabled?"Scheduler enabled":"Scheduler gated")+" · Queue: "+(s.paused?"Paused":"Active")+" · "+(s.status||"offline");
     $("gpu-capability").title=cfg.message;
   }
   for(const action of ["start","stop","retry","pause","resume"]){
     $("gpu-"+action).onclick=async()=>{
-      try{await api("/actions/"+action,"POST");controls(await api("/config"));}
-      catch(e){$("gpu-save-status").textContent=e.message;}
+      if(acting)return;acting=true;
+      for(const name of ["start","stop","retry","pause","resume"])$("gpu-"+name).disabled=true;
+      try{await api("/actions/"+action,"POST");$("gpu-action-status").textContent="Action accepted.";}
+      catch(e){$("gpu-action-status").textContent=e.message;}
+      finally{acting=false;try{controls(await api("/config"));}catch(e){$("gpu-action-status").textContent=e.message;}}
     };
   }
   form.addEventListener("input",rule);
@@ -61,24 +66,27 @@
     data.auto_start=f.auto_start.value==="true";
     saving=true;fields.disabled=true;
     $("gpu-save-status").textContent="Saving…";
-    try{apply(await api("/config","POST",data));$("gpu-save-status").textContent="Saved. GPU actions remain gated.";$("gpu-status").textContent="Status not checked for saved configuration.";$("gpu-instances").replaceChildren();}
+    try{const cfg=await api("/config","POST",data);apply(cfg);$("gpu-save-status").textContent=cfg.dispatch_enabled?"Saved.":"Saved. GPU scheduler not active.";$("gpu-status").textContent="Status not checked for saved configuration.";$("gpu-instances").replaceChildren();}
     catch(error){$("gpu-save-status").textContent=error.message;}
     finally{fields.disabled=false;saving=false;}
   });
-  $("gpu-refresh").addEventListener("click",async()=>{
-    if(refreshing||saving)return;refreshing=true;$("gpu-refresh").disabled=true;fields.disabled=true;
-    $("gpu-status").textContent="Checking SaladCloud…";$("gpu-instances").replaceChildren();
+  async function refreshStatus(){
+    if(refreshing||saving||!configured||document.hidden)return;refreshing=true;$("gpu-refresh").disabled=true;
+    if(!$("gpu-instances").children.length)$("gpu-status").textContent="Checking SaladCloud…";
     try{
       const result=await api("/status");
       $("gpu-status").textContent="Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Dedicated group settings not verified");
+      $("gpu-instances").replaceChildren();
       for(const item of result.instances){const tr=document.createElement("tr");
         for(const val of [item.id,item.state,item.pulling_progress===null?null:item.pulling_progress+"%",item.ready,item.update_time]){const td=document.createElement("td");td.textContent=String(val??"Unknown");tr.append(td);}
         $("gpu-instances").append(tr);
       }
-    }catch(error){$("gpu-status").textContent=error.message;}
-    finally{refreshing=false;fields.disabled=false;$("gpu-refresh").disabled=false;}
-  });
-  api("/config").then(apply).catch(error=>{$("gpu-capability").textContent=error.message;});
+    }catch(error){$("gpu-status").textContent="Status unavailable: "+error.message;$("gpu-instances").replaceChildren();}
+    finally{refreshing=false;$("gpu-refresh").disabled=!configured;}
+  }
+  $("gpu-refresh").addEventListener("click",refreshStatus);
+  api("/config").then(cfg=>{apply(cfg);return refreshStatus();}).catch(error=>{$("gpu-capability").textContent=error.message;});
   const timer=setInterval(async()=>{if(!document.hidden&&!saving){try{controls(await api("/config"));}catch(e){for(const a of ["start","stop","retry","pause","resume"])$("gpu-"+a).disabled=true;}}},10000);
-  window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
+  const statusTimer=setInterval(refreshStatus,10000);
+  window.addEventListener("pagehide",()=>{clearInterval(timer);clearInterval(statusTimer);},{once:true});
 })();

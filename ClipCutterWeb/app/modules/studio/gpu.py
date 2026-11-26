@@ -180,7 +180,10 @@ async def save_config(request:Request, s:GPUStore=Depends(gpu_store)):
 @router.get("/status")
 def status(s:GPUStore=Depends(gpu_store)):
     cfg, key, _ = s.snapshot()
-    return read_status(cfg, key)
+    result=read_status(cfg, key)
+    public=s.public()
+    result.update(dispatch_enabled=public["dispatch_enabled"],message=public["message"])
+    return result
 
 @router.post("/actions/{action}", dependencies=[Depends(require_csrf)])
 def action(action:str, s:GPUStore=Depends(gpu_store)):
@@ -188,5 +191,8 @@ def action(action:str, s:GPUStore=Depends(gpu_store)):
         raise HTTPException(404, "Unknown worker action")
     from .scheduler import Control
     from .lifecycle import LifecycleError
-    try:return Control(s.store).command(action,s.snapshot()[0])
+    try:
+        control=Control(s.store)
+        if action in ("pause","resume"):return control.set_paused(action=="pause")
+        return control.command(action,s.snapshot()[0])
     except LifecycleError as exc:raise HTTPException(409,str(exc)) from None
