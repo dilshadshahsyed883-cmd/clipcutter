@@ -75,7 +75,7 @@ class Lifecycle:
             for x in rows:
                 if x["state"]!="ready":continue
                 p=json.loads(x["payload"]);s=p["settings"]
-                if p["input"]["source_kind"]=="video" and not p["input"].get("output_folder") and not(s["kind"]=="analyzer" and s.get("reference_link")):eligible+=1
+                if p["input"]["source_kind"]=="video" and not p["input"].get("output_folder"):eligible+=1
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()

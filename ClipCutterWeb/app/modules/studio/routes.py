@@ -7,6 +7,7 @@ from .contracts import JobRequest
 from .store import Store
 from .intake import Bridge, stage
 from .review import Approval, get_review, approve
+from .profiles import SaveProfile, listing as profile_listing, save as profile_save, delete as profile_delete
 
 router=APIRouter(prefix="/api/v1/studio")
 def store(principal:Principal=Depends(current_principal)):
@@ -17,6 +18,15 @@ def capabilities(_:Principal=Depends(current_principal)):
     available=Bridge().available()
     return {"input_intake":available,"worker_dispatch":False,"output_receiver":False,
             "request_storage":True,"message":("Drive intake available; GPU transport not connected." if available else "Drive intake bridge unavailable; requests may be saved.")}
+
+@router.get("/profiles")
+def profiles(s:Store=Depends(store)):return {"profiles":profile_listing(s)}
+
+@router.post("/profiles",dependencies=[Depends(require_csrf)])
+def save_profile(value:SaveProfile,s:Store=Depends(store)):return profile_save(s,value)
+
+@router.delete("/profiles/{pid}",dependencies=[Depends(require_csrf)])
+def delete_profile(pid:str,s:Store=Depends(store)):return profile_delete(s,pid)
 
 @router.post("/requests",dependencies=[Depends(require_csrf)],status_code=201)
 def create(req:JobRequest,s:Store=Depends(store)): return s.create(req)

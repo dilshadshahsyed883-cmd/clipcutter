@@ -31,7 +31,7 @@
    const input={source:String(get("source")).trim(),source_kind:get("source_kind"),output_folder:opt("output_folder")};
    let settings={kind,reference_link:opt("reference_link")};
    if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
-   else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
+   else Object.assign(settings,{profile_id:opt("profile_id"),sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
    return {input,settings};
  }
  form.addEventListener("submit",async e=>{
@@ -42,6 +42,22 @@
    try{const r=await api("/requests","POST",{...p,request_id:key});status.textContent="Saved "+r.id.slice(0,8)+" — "+r.message;key=null;await refresh();}
    catch(err){status.textContent=err.message;}finally{saving=false;$("save-request").disabled=false;}
  });
+ async function loadProfiles(){
+   if(kind!=="analyzer")return;
+   const select=$("profile-choice"), previous=select.value, list=$("profile-list");
+   try{const data=await api("/profiles");select.replaceChildren(new Option("None",""));list.replaceChildren();
+     for(const p of data.profiles){select.add(new Option(p.label+" ("+p.reference_count+")",p.id));
+       const row=put("div","");row.className="studio-output";row.append(put("span",p.label+" · "+p.reference_count+" verified references"));
+       row.append(button("Delete",async()=>{if(!confirm("Delete this reusable set? Existing project copies and backups remain."))return;try{await api("/profiles/"+p.id,"DELETE");await loadProfiles();}catch(e){$("profile-status").textContent=e.message;}}));list.append(row);}
+     if(Array.from(select.options).some(o=>o.value===previous))select.value=previous;
+   }catch(e){$("profile-status").textContent=e.message;}
+ }
+ if(kind==="analyzer"){
+   $("profile-choice").onchange=()=>{if($("profile-choice").value)form.elements.reference_link.value="";};
+   form.elements.reference_link.oninput=()=>{if(form.elements.reference_link.value)$("profile-choice").value="";};
+   $("profile-save").onclick=async()=>{const btn=$("profile-save");btn.disabled=true;try{await api("/profiles","POST",{job_id:$("profile-job").value,label:$("profile-label").value});$("profile-status").textContent="Saved verified references";await loadProfiles();}catch(e){$("profile-status").textContent=e.message;}finally{btn.disabled=false;}};
+   loadProfiles();
+ }
  function button(label,fn){const b=put("button",label);b.type="button";b.className="studio-secondary";b.onclick=fn;return b;}
  async function showOutputs(job){
    selected=job;const stamp=++seq;
@@ -95,6 +111,7 @@
      for(const job of data.requests){const tr=document.createElement("tr");
        [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
+       if(kind==="analyzer"&&job.settings.reference_link&&["ready","processing","completed","batch_expanded"].includes(job.state))actions.append(button("Save reference set",()=>{$("profile-job").value=job.id;$("profile-label").focus();}));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&job.message.startsWith("Drive intake:")))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Drive intake requested";await refresh();}catch(err){status.textContent=err.message;}}));

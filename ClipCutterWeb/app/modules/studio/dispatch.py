@@ -115,14 +115,13 @@ class Dispatcher:
             if self._pending(c):raise DispatchError("All pending Drive intake must finish before dispatch")
         if request["input"]["source_kind"]!="video":raise DispatchError("ZIP/folder fan-out requires a separate reviewed implementation")
         settings=request["settings"]
-        if settings["kind"]=="analyzer" and settings.get("reference_link"):raise DispatchError("Analyzer profile reference input is not implemented")
         root=safe_dir(self.store.root/"inputs"/jid)
         data=json.loads((root/"manifest.json").read_text())
         if data.get("version")!=1 or not isinstance(data.get("files"),list):raise DispatchError("Invalid intake manifest")
         source=[x for x in data["files"] if x.get("role")=="source"]
         refs=[x for x in data["files"] if x.get("role")=="reference"]
         if len(source)!=1 or len(refs)>12 or len(source)+len(refs)!=len(data["files"]):raise DispatchError("Unsupported staged file count")
-        if bool(settings.get("reference_link"))!=bool(refs):raise DispatchError("Reference staging mismatch")
+        if bool(settings.get("reference_link") or settings.get("profile_id"))!=bool(refs):raise DispatchError("Reference staging mismatch")
         mapping={};files={}
         for name,item in [("source.video",source[0])]+[(f"reference-{i:02d}.img",x) for i,x in enumerate(refs,1)]:
             filename=item["file"]

@@ -79,7 +79,7 @@ class Scheduler:
         p=json.loads(row["payload"]);s=p["settings"]
         # Do not pay for jobs whose output contract cannot be fulfilled.
         return (p["input"]["source_kind"]=="video" and not p["input"].get("output_folder")
-            and not(s["kind"]=="analyzer" and s.get("reference_link")))
+            )
     def tick(self):
         with self.store.admission():
             rows=self._jobs()

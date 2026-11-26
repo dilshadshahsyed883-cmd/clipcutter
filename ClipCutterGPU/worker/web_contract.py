@@ -93,9 +93,14 @@ class Analyzer(Strict):
     ignore_static_faces: bool=True
     ignore_regions: list[Region]=Field(default_factory=list,max_length=32)
     reference_link: str | None=Field(default=None,max_length=2048)
+    profile_id: str | None=Field(default=None,pattern=r"^[a-f0-9]{32}$")
     @field_validator("reference_link")
     @classmethod
     def validate_reference(cls,v): return drive_link(v) if v is not None else None
+    @model_validator(mode="after")
+    def profile_choice(self):
+        if self.profile_id and self.reference_link:raise ValueError("Choose one reference source")
+        return self
 
 class JobRequest(Strict):
     input: Input

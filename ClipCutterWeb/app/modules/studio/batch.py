@@ -83,7 +83,7 @@ def expand(store,parent,root,manifest):
     refs=[x for x in manifest if x["role"]=="reference"]
     if len(refs)>12 or any(not 0<x["size"]<=MAX_REFERENCE for x in refs):
         raise RuntimeError("Batch reference count or size limit exceeded")
-    if bool(job["settings"].get("reference_link"))!=bool(refs):raise RuntimeError("Batch reference mismatch")
+    if bool(job["settings"].get("reference_link") or job["settings"].get("profile_id"))!=bool(refs):raise RuntimeError("Batch reference mismatch")
     for x in manifest:
         if not re.fullmatch(r"(?:source|reference)-[0-9]{4}\.[a-z0-9]+",x["file"]):raise RuntimeError("Unsafe batch filename")
         p=root/x["file"]

@@ -30,6 +30,8 @@
 <div id="manual-ranges" hidden><h3>Manual clip ranges (seconds)</h3><div id="range-list"></div><button type="button" id="add-range" class="studio-secondary">Add range</button></div>
 {% else %}
 <h3>Person Analyzer settings</h3>
+<label>Saved reference set (optional)<select name="profile_id" id="profile-choice"><option value="">None</option></select></label>
+<p class="studio-note">Choose either a saved set or a Drive reference link. Review candidates are not confirmed identities.</p>
 <div class="studio-grid">
 <label>Sample interval (ms) <input name="sample_interval_ms" type="number" min="250" max="10000" value="1000" required></label>
 <label>Similarity threshold <input name="similarity_threshold" type="number" min="0" max="1" step=".01" value=".50" required></label>
@@ -47,6 +49,9 @@
 <p class="studio-note">Only recorded requests and actual backend states are shown. No simulated progress.</p>
 <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
 </section>
+{% if page.key == "analyzer" %}
+<section class="content-card studio-card"><h2>Reference sets</h2><p class="studio-note">Save verified, authorized reference images from a request under a distinct label. Deletion retains already-staged project snapshots and existing backups.</p><div class="studio-grid"><label>Source request<input id="profile-job" readonly></label><label>Reference set label<input id="profile-label" maxlength="80"></label></div><div class="studio-actions"><button type="button" id="profile-save">Save reference set</button><span id="profile-status" role="status"></span></div><div id="profile-list"></div></section>
+{% endif %}
 <section class="content-card studio-card" id="batch-panel" hidden><h2>Batch videos</h2><div id="batch-members"></div></section>
 <section class="content-card studio-card" id="review-panel" hidden>
 <h2>Review scan ranges</h2><p id="review-status" role="status"></p><div id="review-ranges"></div>
@@ -56,4 +61,4 @@
 <h2>Verified outputs</h2><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-batch-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-profile-1"></script>

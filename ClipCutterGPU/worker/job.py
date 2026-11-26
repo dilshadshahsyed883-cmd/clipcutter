@@ -29,10 +29,8 @@ class Staged(BaseModel):
     def check(self):
         if any(not re.fullmatch(r"[a-f0-9]{64}",x) for x in self.references_sha256):
             raise ValueError("Invalid staged reference digest")
-        if bool(self.request.settings.reference_link)!=bool(self.references_sha256):
+        if bool(self.request.settings.reference_link or getattr(self.request.settings,"profile_id",None))!=bool(self.references_sha256):
             raise ValueError("Reference staging differs from request")
-        if isinstance(self.request.settings,Analyzer) and self.references_sha256:
-            raise ValueError("Analyzer reference-profile input awaits explicit profile integration")
         return self
 
 def sha(path,cancel):
@@ -80,6 +78,11 @@ def run(root,action,cancel):
                  "regions":[[r.x,r.y,r.x+r.w,r.y+r.h] for r in settings.ignore_regions]}
         model_dir=require_models(cancel)
         engine=Engine(model_dir,os.environ.get("CLIPCUTTER_USE_GPU","1")=="1",640)
+        # User-selected reference set, ephemeral model features only.
+        ref_meta=None
+        if job.references_sha256:
+            from .analyzer.reference_set import load_reference_set
+            ref_meta=load_reference_set(references(root,job.references_sha256,cancel),engine,cancel.is_set)
         last=[0.]
         def progress(t,total,device,groups,warning,frames,observed):
             if time.monotonic()-last[0]>=1:
@@ -90,6 +93,10 @@ def run(root,action,cancel):
             # Do not export raw embeddings, images, face coordinates or host paths.
             people=[{k:g[k] for k in ("id","name","identity_status","segments","raw_segments","filtered","filter_reasons")} for g in data["people"]]
             summary={k:data[k] for k in ("version","duration","sample_interval","threshold","decoded_frames","analyzed_frames","device","elapsed_seconds")}
+            if ref_meta is not None:
+                from .analyzer.reference_set import annotate_candidates
+                annotate_candidates(data,people,ref_meta,cancel.is_set)
+                summary["reference_set"]={"profile_id":settings.profile_id,"reference_count":len(job.references_sha256),"valid_count":ref_meta["valid_count"],"status":ref_meta["status"],"requires_review":True}
             summary.update(people=people,source_sha256=job.source_sha256)
         if cancel.is_set():raise InterruptedError("Cancelled")
         output=root/"outputs";output.mkdir(mode=0o700,exist_ok=False)

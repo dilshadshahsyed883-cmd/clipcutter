@@ -195,6 +195,9 @@ def stage(store, jid, bridge=None):
                                  "size":meta["size"],"sha256":meta["sha256"],"md5":meta["md5"],"original_name":meta["name"]})
                 store.intake_progress(jid, min(99,round(index/len(plan)*100,1)),
                                       f"Verified {index}/{len(plan)} input files")
+            if job["settings"].get("profile_id"):
+                from .profiles import copy_refs
+                manifest.extend(copy_refs(store,job["settings"]["profile_id"],tmp,len(manifest)+1,JOB_LIMIT-total))
             with (tmp/"manifest.json").open("x") as f:
                 json.dump({"version":1,"files":manifest},f)
                 f.flush(); os.fsync(f.fileno())

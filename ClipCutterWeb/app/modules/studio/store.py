@@ -80,6 +80,9 @@ class Store:
             if row:
                 if row["payload"]!=payload: raise HTTPException(409,"Request ID already used with different settings")
                 return self.public(row)
+            if getattr(req.settings,"profile_id",None):
+                from .profiles import exists
+                if not exists(c,req.settings.profile_id):raise HTTPException(404,"Reference set not found")
             count=c.execute("SELECT count(*) FROM requests WHERE owner=? AND state='awaiting_input'",(self.owner,)).fetchone()[0]
             if count>=500: raise HTTPException(409,"Pending request limit reached")
             jid=uuid4().hex
