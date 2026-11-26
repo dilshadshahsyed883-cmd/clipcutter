@@ -19,11 +19,11 @@ def intervals(samples,duration,step):
     return [[round(a,3),round(b,3)] for a,b in out]
 
 def assign(groups,embedding,used,threshold):
-    candidates=[(float(np.dot(unit(g['_sum']),embedding)),i) for i,g in enumerate(groups) if i not in used]
+    candidates=[(float(np.dot(unit(g['_sum']),embedding)),i) for i,g in enumerate(groups) if np.linalg.norm(g['_sum'])>1e-8]
     candidates.sort(key=lambda pair:(-pair[0],pair[1]))
     score,i=candidates[0] if candidates else (-1,-1)
     runner=candidates[1][0] if len(candidates)>1 else -1
-    if score>=threshold and score-runner>=.08: return i
+    if i not in used and score>=threshold and score-runner>=.08: return i
     groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
 def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True):
@@ -59,9 +59,9 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
                 boxes.append((g['id'],g['name'],[x/w,y/h,X/w,Y/h]))
             if live and time.monotonic()-last_live>=.25:
                 last_live=time.monotonic()
-                view={'duration':max(duration,t+step),'sample_interval':step,'filters':filters or {},'people':[dict(id=g['id'],name=g['name'],ignored=False,observations=g['observations']) for g in groups]}
+                view={'duration':max(duration,t+step),'sample_interval':step,'filters':filters or {},'people':[dict(id=g['id'],name=g['name'],ignored=False,identity_status=g['identity_status'],observations=g['observations']) for g in groups]}
                 refresh(view)
-                summary=[{k:g[k] for k in ('id','name','ignored','segments','references','filter_reasons','filtered','raw_segments')} for g in view['people']]
+                summary=[{k:g[k] for k in ('id','name','ignored','identity_status','segments','references','filter_reasons','filtered','raw_segments')} for g in view['people']]
                 small=cv2.resize(img,(min(w,960),max(1,round(h*min(w,960)/w))))
                 live(t,small,boxes,summary,view['duration'],folder)
             progress(t,duration,engine.device,len(groups),engine.warning,frames,observed)
@@ -71,6 +71,7 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
         duration=max(last+1/fps, duration)
         data={'decoded_frames':frames,'analyzed_frames':observed,'version':2,'source':str(Path(video).resolve()),'duration':round(duration,3),'sample_interval':step,'threshold':threshold,'detector_size':size,'device':engine.device,'warning':engine.warning,'elapsed_seconds':round(time.perf_counter()-started,2),'people':groups,'filters':filters or {}}
         for g in groups: g.pop('_sum')
+        refresh(data)
         if persist: save_project(folder,data)
         return data
     finally: cap.release()
