@@ -1,0 +1,5 @@
+# Automatic worker lifecycle checkpoint
+
+Ported the audited Concat lifecycle decision rules to the independent ClipCutter owner ledger in app/modules/studio/lifecycle.py. Internal tick supports dedicated-group and digest validation, intake/paused barriers, fresh exact-instance recheck, 8%/20s defaults, three reallocations per cycle, 300-second retry cooldown, durable mutation intents, authenticated readiness, conservative undelivered-attempt protection and 60-second idle drain. Mocked source tests cover lifecycle behavior; no cloud requests in tests.
+
+This is not activated production automation: the existing Web controls remain disabled; no scheduler invokes the controller, and real mutation client requires root-approved group, private digest and explicit lifecycle enable flag. Cross-admission/dispatcher locking, persisted manual-action queue and authorized reconciliation/retry controls, review continuation, ZIP/folder expansion, analyzer profiles, Drive output delivery, model supply and actual GPU acceptance remain pending. Do not set live enable flag or deploy until these gates are completed. No image build or paid GPU start.
