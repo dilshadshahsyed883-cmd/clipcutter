@@ -42,11 +42,19 @@ function detect(env) {
   const apps = path.join(root, 'Apps'), exe = path.join(apps, 'CapCut.exe');
   out.exe = fs.existsSync(exe) ? exe : '';
   out.version = highestVersionDir(apps);
+  if (!out.exe && out.version) { const versionExe = path.join(apps, out.version, 'CapCut.exe'); if (fs.existsSync(versionExe)) out.exe = versionExe; }
   let drafts = path.join(root, 'User Data', 'Projects', 'com.lveditor.draft');
   try { // the user can move the drafts folder in CapCut: the choice is stored in its globalSetting file
     const s = fs.readFileSync(path.join(root, 'User Data', 'Config', 'globalSetting'), 'utf8');
-    const m = s.match(/^currentCustomDraftPath=(.+)$/m);
-    if (m) { const p = m[1].trim().replace(/\\\\/g, '\\'); if (p && fs.existsSync(p)) { drafts = p; out.draftsFromSettings = true; } }
+    const m = s.match(/^\s*currentCustomDraftPath\s*=([^\r\n]*)/m);
+    if (m) {
+      const p = m[1].trim().replace(/^"|"$/g, '').replace(/\\\\/g, '\\');
+      if (p) {
+        out.draftsFromSettings = true;
+        if (path.isAbsolute(p) && fs.existsSync(p) && fs.statSync(p).isDirectory()) drafts = p;
+        else { drafts = ''; out.draftsSettingError = 'Configured CapCut drafts folder is unavailable. Set a valid manual folder in Clipivo Settings.'; }
+      }
+    }
   } catch (_) {}
   out.draftsRoot = drafts;
   out.installed = !!out.exe || fs.existsSync(drafts);
