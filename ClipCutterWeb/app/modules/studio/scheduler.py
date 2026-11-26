@@ -121,7 +121,16 @@ class Scheduler:
                 except DispatchError as exc:
                     self.control.mark("worker_reconcile_required: "+str(exc)[:250])
                 return
-            if paused or action=="stop" or state!="ready":return
+            if paused or action=="stop" or state!="ready":
+                # Expose the live readiness reason on each otherwise eligible request.
+                reason="queue_paused" if paused else "manual_stop_pending" if action=="stop" else state
+                for row in rows:
+                    if row["state"]=="ready" and row["phase"] in (None,"new") and self.eligible(row):
+                        message="Waiting for GPU: "+reason
+                        with self.store.connect() as c:
+                            c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='ready' AND message!=?",
+                                      (message,int(time.time()),row["id"],self.store.owner,message))
+                return
             next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
             if next_job:
                 try:
