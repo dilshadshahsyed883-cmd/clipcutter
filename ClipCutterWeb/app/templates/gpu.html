@@ -27,7 +27,7 @@
           <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2">2 (requires resource acceptance)</option></select></label>
         </div>
         <p id="gpu-rule" class="studio-note" aria-live="polite"></p>
-        <p class="studio-note">Automatic shutdown: 60 seconds after the queue and verified deliveries finish. Settings are saved now; execution is gated until the transport is available.</p>
+        <p class="studio-note">Automatic shutdown: 60 seconds after the queue and verified deliveries finish. Execution is gated until finalization and runtime acceptance.</p>
         <div class="studio-actions"><button type="submit" id="gpu-save">Save Automation Settings</button><span id="gpu-save-status" role="status"></span></div>
       </fieldset>
     </form>
@@ -36,8 +36,8 @@
     <div class="studio-heading"><h2>Worker status</h2><button type="button" id="gpu-refresh" class="studio-secondary" disabled>Refresh Salad status</button></div>
     <p id="gpu-status" role="status" class="studio-note">Status not checked.</p>
     <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Instance</th><th>State</th><th>Image pull</th><th>Salad ready</th><th>Updated</th></tr></thead><tbody id="gpu-instances"></tbody></table></div>
-    <div class="studio-actions"><button type="button" disabled>Start Worker</button><button type="button" disabled>Stop Worker</button><button type="button" disabled>Retry Worker Action</button></div>
-    <p class="studio-note">Start, stop and reallocation are unavailable until Drive intake, verified worker dispatch and safe delivery are integrated. Salad readiness is not worker health.</p>
+    <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button></div>
+    <p class="studio-note">Actions require an approved online scheduler. Retry rechecks unresolved actions without repeating ambiguous mutations.</p>
   </section>
 </div>
-<script defer src="/static/gpu.js?v=20261126-gpu-config-1"></script>
+<script defer src="/static/gpu.js?v=20261126-gpu-scheduler-1"></script>

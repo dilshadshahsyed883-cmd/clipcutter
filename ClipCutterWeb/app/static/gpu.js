@@ -33,7 +33,21 @@
     $("gpu-worker-key-state").textContent=cfg.worker_key_configured?"Token configured":"Token not configured";
     $("gpu-capability").textContent=cfg.message;
     fields.disabled=false; $("gpu-refresh").disabled=!(cfg.group_configured&&cfg.salad_key_configured);
+    controls(cfg);
     rule();
+  }
+  function controls(cfg){
+    const enabled=cfg.dispatch_enabled===true,s=cfg.scheduler||{};
+    for(const action of ["start","stop","retry","pause","resume"]){
+      $("gpu-"+action).disabled=!enabled||(["start","stop"].includes(action)&&cfg.auto_start)||(action==="pause"&&s.paused)||(action==="resume"&&!s.paused);
+    }
+    $("gpu-capability").textContent=cfg.message+" | Queue: "+(s.paused?"Paused":"Active")+" | "+(s.status||"offline");
+  }
+  for(const action of ["start","stop","retry","pause","resume"]){
+    $("gpu-"+action).onclick=async()=>{
+      try{await api("/actions/"+action,"POST");controls(await api("/config"));}
+      catch(e){$("gpu-save-status").textContent=e.message;}
+    };
   }
   form.addEventListener("input",rule);
   form.addEventListener("submit",async event=>{
@@ -64,4 +78,6 @@
     finally{refreshing=false;fields.disabled=false;$("gpu-refresh").disabled=false;}
   });
   api("/config").then(apply).catch(error=>{$("gpu-capability").textContent=error.message;});
+  const timer=setInterval(async()=>{if(!document.hidden&&!saving){try{controls(await api("/config"));}catch(e){for(const a of ["start","stop","retry","pause","resume"])$("gpu-"+a).disabled=true;}}},10000);
+  window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
 })();

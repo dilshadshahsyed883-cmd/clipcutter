@@ -21,7 +21,7 @@ from .store import Store
 SALAD_API = "https://api.salad.com/api/public"
 IDLE_SECONDS = 60
 RETRY_CYCLE_SECONDS = 300
-BLOCKER = "Drive intake, authenticated worker dispatch and verified delivery are not connected. GPU mutations are disabled."
+BLOCKER = "Live scheduler activation is gated pending finalization and runtime acceptance."
 
 class GPUSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -89,14 +89,17 @@ class GPUStore:
 
     def public(self):
         cfg, key, worker = self.snapshot()
+        from .scheduler import Control, authorized
+        control=Control(self.store).snapshot()
+        enabled=authorized(self.store,cfg) and control["online"]
         return {**cfg.model_dump(), "salad_key_configured": bool(key),
                 "worker_key_configured": bool(worker), "group_configured": bool(group_path(cfg)),
                 "idle_seconds": IDLE_SECONDS, "retry_cycle_seconds": RETRY_CYCLE_SECONDS,
-                "dispatch_enabled": False, "message": BLOCKER}
+                "dispatch_enabled": enabled, "scheduler": control, "message": ("Scheduler online" if enabled else BLOCKER)}
 
     def save(self, value):
         cfg = GPUSettings.model_validate(value.model_dump(include=set(GPUSettings.model_fields)))
-        with self.store.connect() as con:
+        with self.store.admission(), self.store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             _, old_salad, old_worker = self._read(con)
             key = "" if value.clear_salad_key else value.salad_key or old_salad
@@ -180,7 +183,10 @@ def status(s:GPUStore=Depends(gpu_store)):
     return read_status(cfg, key)
 
 @router.post("/actions/{action}", dependencies=[Depends(require_csrf)])
-def action(action:str, _:Principal=Depends(admin_principal)):
-    if action not in ("start", "stop", "retry"):
+def action(action:str, s:GPUStore=Depends(gpu_store)):
+    if action not in ("start", "stop", "retry", "pause", "resume"):
         raise HTTPException(404, "Unknown worker action")
-    raise HTTPException(409, BLOCKER)
+    from .scheduler import Control
+    from .lifecycle import LifecycleError
+    try:return Control(s.store).command(action,s.snapshot()[0])
+    except LifecycleError as exc:raise HTTPException(409,str(exc)) from None

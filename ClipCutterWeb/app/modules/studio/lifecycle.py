@@ -75,7 +75,7 @@ class Lifecycle:
             for x in rows:
                 if x["state"]!="ready":continue
                 p=json.loads(x["payload"]);s=p["settings"]
-                if p["input"]["source_kind"]=="video" and not(s["kind"]=="analyzer" and s.get("reference_link")):eligible+=1
+                if p["input"]["source_kind"]=="video" and not p["input"].get("output_folder") and not(s["kind"]=="analyzer" and s.get("reference_link")):eligible+=1
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
@@ -104,7 +104,6 @@ class Lifecycle:
         if r.get("group") not in (None,self.api.path):return done("group_changed_reconcile")
         r["group"]=self.api.path
         if manual and self.cfg.auto_start:return done("select_manual_mode")
-        if not self.cfg.auto_start and manual is None:return done("manual_mode")
         if now<r.get("poll_after",0):return r.get("status","waiting")
         r["poll_after"]=now+3
         work=self._work()
@@ -123,6 +122,7 @@ class Lifecycle:
                 if r.get("start_intent"):return done("start_pending_confirmation")
                 if manual=="stop":return done("stopped")
                 if paused or work["intake"] or work["busy"]:return done("waiting_for_drive_or_reconciliation")
+                if manual!="start" and not self.cfg.auto_start:return done("manual_mode")
                 if not work["eligible"] and manual!="start":return done("idle_stopped")
                 r["start_intent"]=True
                 # Recheck ledger before mutating. Atomic cross-admission gate still required
@@ -169,7 +169,7 @@ class Lifecycle:
             if progress>=self.cfg.image_pull_threshold:r["accepted"]=True
             if r["accepted"]:return done("downloading_healthy")
             if now-r["download_since"]<self.cfg.image_pull_seconds:return done("checking_download")
-            if manual or paused or work["intake"] or work["busy"]:return done("slow_download_no_reallocation")
+            if manual or not self.cfg.auto_start or paused or work["intake"] or work["busy"]:return done("slow_download_no_reallocation")
             key=ident+"/"+transition
             if key in r.get("reallocated",[]):return done("waiting_for_reallocation")
             if now<r.get("cooldown_until",0):return done("reallocation_cooldown")

@@ -1,5 +1,6 @@
 """Owner-scoped persistent request ledger. No scheduler and no browser worker callback."""
 from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -60,7 +61,17 @@ class Store:
             with c: yield c
         finally: c.close()
 
+    @contextmanager
+    def admission(self):
+        locks=safe_dir(self.root/"orchestration-locks")
+        with os.fdopen(os.open(locks/"admission.lock",os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            yield
+
     def create(self,req:JobRequest):
+        with self.admission():return self._create(req)
+
+    def _create(self,req:JobRequest):
         payload=json.dumps(req.model_dump(exclude={"request_id"}),sort_keys=True,separators=(",",":"))
         now=int(time.time())
         with self.connect() as c:

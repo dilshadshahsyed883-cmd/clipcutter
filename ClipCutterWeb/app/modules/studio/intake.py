@@ -153,13 +153,14 @@ def stage(store, jid, bridge=None):
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:
             return
-        job=store.get(jid)
-        if job["state"] not in ("awaiting_input","staging","failed"):
-            return
-        if job["state"]=="failed" and not job["message"].startswith("Drive intake:"):
-            return
-        if job["state"]!="staging":
-            store.transition(jid,job["state"],"staging","Discovering Drive input")
+        with store.admission():
+            job=store.get(jid)
+            if job["state"] not in ("awaiting_input","staging","failed"):
+                return
+            if job["state"]=="failed" and not job["message"].startswith("Drive intake:"):
+                return
+            if job["state"]!="staging":
+                store.transition(jid,job["state"],"staging","Discovering Drive input")
         parent=safe_dir(store.root/"inputs")
         tmp=parent/(jid+".partial")
         final=parent/jid
