@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!requirements.txt
+!worker/
+!worker/**
+**/__pycache__/
+**/*.pyc
+**/*.onnx
+**/*.pt
+**/*.env

@@ -227,6 +227,8 @@ class InsightFaceEngine:
 
         folder = self._model_folder()
         providers = execution_providers() if self.use_gpu and status.device == "GPU" else ["CPUExecutionProvider"]
+        if self.use_gpu and providers[0] != "CUDAExecutionProvider":
+            raise RuntimeError("CUDA worker is unavailable; refusing CPU fallback")
         application = FaceAnalysis(
             folder / "det_10g.onnx", folder / "w600k_r50.onnx", self.detector_size, providers,
         )

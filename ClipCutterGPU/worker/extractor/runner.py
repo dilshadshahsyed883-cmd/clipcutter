@@ -49,7 +49,9 @@ def engine():
     model_dir=find_face_models()
     if model_dir is None:
         raise RuntimeError("Worker model directory is missing required files")
-    instance=InsightFaceEngine(model_dir, use_gpu=os.environ.get("CLIPCUTTER_USE_GPU")=="1")
+    from worker.runtime import require_models
+    require_models(cancel=None)
+    instance=InsightFaceEngine(model_dir, use_gpu=os.environ.get("CLIPCUTTER_USE_GPU","1")=="1")
     status=instance.status()
     if not status.available:
         raise RuntimeError(status.detail)
@@ -124,7 +126,7 @@ def run(root: Path, action: str, cancel: Event):
     paths=export_ranges(source,ranges,output,opts.mode,opts.stitched,include_audio=opts.include_audio,
         progress=lambda d,t,m:event("export",d,t,m),cancel_event=cancel,source_fps=info.fps,
         source_video_bitrate_kbps=info.video_bitrate_kbps,shape=shape,clip_limits=limits,
-        video_encoder="cpu",output_name="clip")
+        video_encoder=os.environ.get("CLIPCUTTER_VIDEO_ENCODER","auto"),output_name="clip")
     expected = []
     if opts.framing == 'whole' and opts.mode == 'accurate':
         if limits:

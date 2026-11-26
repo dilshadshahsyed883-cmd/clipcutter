@@ -49,8 +49,8 @@ def assign(groups,embedding,used,threshold,*,box=None,timestamp=None,step=None):
             index=spatial[0][1];groups[index]['identity_status']='uncertain';return index
     groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
-def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True):
-    if step<=0 or not 0<threshold<1: raise ValueError('Invalid analysis settings')
+def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True,store_crops=True):
+    if step<=0 or not 0<=threshold<=1: raise ValueError('Invalid analysis settings')
     folder=Path(folder); folder.mkdir(parents=True,exist_ok=False); refs=folder/'references'; refs.mkdir()
     started=time.perf_counter(); engine=engine or Engine(models,gpu,size); cap=cv2.VideoCapture(str(video)); groups=[]; frames=0; last=-1.; next_t=0.; observed=0; last_live=0
     try:
@@ -75,9 +75,11 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
                 i=assign(groups,e,used,threshold,box=normalized,timestamp=t,step=step); used.add(i); g=groups[i]; g['_sum']+=e
                 refdir=refs/g['id']; refdir.mkdir(exist_ok=True)
                 # Keep each sampled face so groups can be corrected after analysis.
-                path=refdir/f'{observed:07d}.jpg'; ok,data=cv2.imencode('.jpg',crop)
-                if not ok: raise RuntimeError('Could not encode reference crop')
-                path.write_bytes(data.tobytes()); rel=path.relative_to(folder).as_posix()
+                path=refdir/f'{observed:07d}.jpg'; rel=path.relative_to(folder).as_posix()
+                if store_crops:
+                    ok,data=cv2.imencode('.jpg',crop)
+                    if not ok: raise RuntimeError('Could not encode reference crop')
+                    path.write_bytes(data.tobytes())
                 sig=cv2.resize(cv2.cvtColor(crop,cv2.COLOR_BGR2GRAY),(8,8)).ravel().tolist()
                 g['observations'].append({'time':round(t,3),'image':rel,'quality':q,'embedding':e.tolist(),'box_norm':normalized,'face_size':min(X-x,Y-y),'confidence':confidence,'signature':sig})
                 boxes.append((g['id'],g['name'],normalized))

@@ -17,6 +17,7 @@ class Engine:
         import onnxruntime as ort
         avail=ort.get_available_providers(); options=ort.SessionOptions(); options.log_severity_level=3
         provider=next((p for p in ['CUDAExecutionProvider','DmlExecutionProvider','CoreMLExecutionProvider'] if p in avail),'CPUExecutionProvider') if gpu else 'CPUExecutionProvider'
+        if gpu and provider!='CUDAExecutionProvider': raise RuntimeError('CUDA required for GPU analysis')
         if provider=='DmlExecutionProvider':
             options.enable_mem_pattern=False; options.execution_mode=ort.ExecutionMode.ORT_SEQUENTIAL
         providers=[provider]+(['CPUExecutionProvider'] if provider!='CPUExecutionProvider' else [])
@@ -24,18 +25,14 @@ class Engine:
             self.det=ort.InferenceSession(str(self.folder/'det_10g.onnx'),sess_options=options,providers=providers)
             self.rec=ort.InferenceSession(str(self.folder/'w600k_r50.onnx'),sess_options=options,providers=providers)
         except Exception as exc:
-            if provider=='CPUExecutionProvider': raise
-            self.warning='GPU initialization failed; CPU fallback: '+str(exc); return self.load(False)
+            raise RuntimeError('Analyzer inference session initialization failed') from exc
         det_provider=self.det.get_providers()[0]; rec_provider=self.rec.get_providers()[0]
         if provider!='CPUExecutionProvider' and (det_provider!=provider or rec_provider!=provider):
-            self.warning='GPU provider unavailable for one or both sessions; CPU fallback'; return self.load(False)
+            raise RuntimeError('Analyzer CUDA session fell back to CPU')
         self.device=det_provider; self.gpu=det_provider!='CPUExecutionProvider'
         if gpu and not self.gpu: self.warning='No compatible GPU provider; using CPU'
     def get(self,image):
-        try: return self._get(image)
-        except Exception as exc:
-            if not self.gpu: raise
-            self.warning='GPU inference failed; CPU fallback: '+str(exc); self.load(False); return self._get(image)
+        return self._get(image)
     def _get(self,image):
         h,w=image.shape[:2]; s=self.size; scale=s/max(h,w); nh,nw=max(1,int(h*scale)),max(1,int(w*scale))
         canvas=np.zeros((s,s,3),np.uint8); canvas[:nh,:nw]=cv2.resize(image,(nw,nh))

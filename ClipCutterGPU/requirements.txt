@@ -1,0 +1,7 @@
+# Independent Linux worker candidate; do not install on VPS Web.
+# CUDA 12.8 / cuDNN 9 wheel family, not desktop CPU runtime.
+av==16.1.0
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+onnxruntime-gpu==1.26.0
+pydantic==2.13.5
