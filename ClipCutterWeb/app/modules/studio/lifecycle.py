@@ -79,10 +79,10 @@ class Lifecycle:
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
-            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase!='acknowledged' LIMIT 1").fetchone())
+            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new') LIMIT 1").fetchone())
         return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
-            "busy":unresolved or any(s in ("processing","delivering","review") for s in states),
-            "empty":all(s in ("completed","failed","cancelled") for s in states) and not unresolved}
+            "busy":unresolved or any(s in ("processing","delivering") for s in states),
+            "empty":all(s in ("completed","failed","cancelled","review") for s in states) and not unresolved}
     def _post(self,r,action,i=None):
         self._save(r,action+"_requested")
         try:self.api.mutate(action,i)

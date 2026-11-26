@@ -54,6 +54,27 @@
        if(file.media_type==="video/mp4")row.append(button("Preview",()=>{video.src=href+"?preview=true";video.hidden=false;}));list.append(row);}
    }catch(err){if(stamp===seq)$("output-status").textContent=err.message;}
  }
+ async function showReview(job){
+   const pane=$("review-panel"), rows=$("review-ranges"), note=$("review-status"), approve=$("review-approve");
+   pane.hidden=false;rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
+   const stamp=++seq;
+   try{
+     const data=await api("/requests/"+job+"/review");if(stamp!==seq)return;
+     note.textContent="Source duration: "+(data.duration_ms/1000)+" s. Review the start/end times. "+(data.ready_for_approval?"":"Waiting for verified scan acknowledgement.");
+     for(const r of data.ranges)fields(rows,["Start (s)","End (s)"],[r.start_ms/1000,r.end_ms/1000],1000);
+     $("review-add").onclick=()=>fields(rows,["Start (s)","End (s)"],[0,Math.min(2,data.duration_ms/1000)],1000);
+     approve.disabled=!data.ready_for_approval;
+     approve.onclick=async()=>{
+       approve.disabled=true;
+       try{
+         const ranges=values("review-ranges").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)}));
+         if(!ranges.length||ranges.some(r=>!Number.isFinite(r.start_ms)||!Number.isFinite(r.end_ms)||r.start_ms<0||r.end_ms<=r.start_ms||r.end_ms>data.duration_ms))throw Error("Enter valid source ranges");
+         await api("/requests/"+job+"/review","POST",{scan_sha256:data.scan_sha256,ranges});
+         note.textContent="Approved; export queued.";await refresh();
+       }catch(e){note.textContent=e.message;approve.disabled=false;}
+     };
+   }catch(e){note.textContent=e.message;}
+ }
  async function refresh(){
    if(refreshing||document.hidden)return;refreshing=true;
    try{const data=await api("/requests?kind="+kind),rows=$("request-rows");rows.replaceChildren();
@@ -61,6 +82,7 @@
      for(const job of data.requests){const tr=document.createElement("tr");
        [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
+       if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&job.message.startsWith("Drive intake:")))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Drive intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
        tr.append(actions);rows.append(tr);}

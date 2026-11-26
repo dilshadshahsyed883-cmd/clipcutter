@@ -103,7 +103,7 @@ class Scheduler:
             rows=self._jobs()
             # Existing attempts take priority, including published-but-unacknowledged.
             # Paused mode blocks new start but never stops running/delivery reconciliation.
-            current=next((x for x in rows if x["phase"] in ("new","create_intent","staging","start_intent","processing","delivering","published")),None)
+            current=next((x for x in rows if x["phase"] in ("create_intent","staging","start_intent","processing","delivering","published","scan_receipt","review")),None)
             if current:
                 try:
                     result=self.dispatch.tick(current["id"],allow_start=not paused and action!="stop" and state in ("ready","worker_busy"))
@@ -112,7 +112,7 @@ class Scheduler:
                 return
             if paused or action=="stop" or state!="ready":return
             if any(x["state"] in ("awaiting_input","staging") for x in rows):return
-            next_job=next((x for x in rows if x["state"]=="ready" and not x["phase"] and self.eligible(x)),None)
+            next_job=next((x for x in rows if x["state"]=="ready" and x["phase"] in (None,"new") and self.eligible(x)),None)
             if next_job:
                 try:self.control.mark(self.dispatch.tick(next_job["id"]))
                 except DispatchError:self.control.mark("worker_reconcile_required")

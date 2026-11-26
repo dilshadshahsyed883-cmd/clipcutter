@@ -6,6 +6,7 @@ from app.modules.admin.security import require_csrf
 from .contracts import JobRequest
 from .store import Store
 from .intake import Bridge, stage
+from .review import Approval, get_review, approve
 
 router=APIRouter(prefix="/api/v1/studio")
 def store(principal:Principal=Depends(current_principal)):
@@ -38,6 +39,12 @@ def detail(job:str,s:Store=Depends(store)): return s.get(job)
 
 @router.post("/requests/{job}/cancel",dependencies=[Depends(require_csrf)])
 def cancel(job:str,s:Store=Depends(store)): return s.cancel(job)
+
+@router.get("/requests/{job}/review")
+def review(job:str,s:Store=Depends(store)): return get_review(s,job)
+
+@router.post("/requests/{job}/review",dependencies=[Depends(require_csrf)])
+def approve_review(job:str,value:Approval,s:Store=Depends(store)): return approve(s,job,value)
 
 @router.get("/requests/{job}/outputs")
 def outputs(job:str,s:Store=Depends(store)): return {"outputs":s.output_list(job)}
