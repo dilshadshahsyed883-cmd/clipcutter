@@ -22,3 +22,7 @@ Owner instruction recorded on 26 November 2026:
 Keep the whole `Clipivo_V2` folder together. This repository currently contains runnable-source development work, **not a compiled Windows EXE or a verified final release**. See `Clipivo_V2/README.md` for setup.
 
 All further work belongs in this repository. Rajudesktop supplied the CapCut draft-writing logic; Concat supplied the relevant clip-selection logic. Neither application is a runtime dependency. No changes were merged into either source repository.
+
+## PC testing ZIP
+
+Source ZIP and extracted app default to `%LOCALAPPDATA%\ClipivoV2`, not Downloads. See [PC testing ZIP method](docs/PC_TEST_ZIP_METHOD.md) for the archive layout, exact directories and setup requirements. This is a documented requirement; executable builds remain prohibited.
