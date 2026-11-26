@@ -1,0 +1,95 @@
+"""Synthetic tests; never contact Salad or a GPU."""
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+from app.modules.studio.contracts import JobRequest
+from app.modules.studio.store import Store,safe_dir
+from app.modules.studio.dispatch import Dispatcher,WorkerClient,DispatchError,RemoteError,canonical,CHUNK
+
+def sha(b):return hashlib.sha256(b).hexdigest()
+VIDEO=b"\x00\x00\x00\x18ftypisom synthetic"
+OUT=b'{"people":[]}'
+def request(key="a"*32,kind="analyzer"):
+    s={"kind":kind}
+    if kind=="extractor":s.update(mode="manual",ranges=[{"start_ms":0,"end_ms":2000}])
+    return JobRequest.model_validate({"request_id":key,"input":{"source":"https://drive.google.com/file/d/abcdef123456789/view"},"settings":s})
+
+class Fake:
+    origin="https://example.salad.cloud";expected_sha="1"*40
+    def __init__(self):self.remote=None;self.creates=0;self.starts=0;self.purges=0;self.fail_create=False
+    def capabilities(self):return {"active_renders":0}
+    def create(self,a,m):
+        self.creates+=1
+        self.remote={"attempt_id":a,"job_id":m["job"]["job_id"],"action":m["action"],"files":m["files"],
+                     "uploaded":{n:0 for n in m["files"]},"state":"staging"}
+        if self.fail_create:raise DispatchError("Lost response")
+        return self.remote
+    def status(self,a):
+        if self.remote is None:raise RemoteError(404)
+        return self.remote
+    def put(self,a,n,offset,data):
+        assert data==VIDEO
+        self.remote["uploaded"][n]=offset+len(data)
+        return {"offset":offset+len(data)}
+    def start(self,a):
+        self.starts+=1;self.remote["state"]="running";return self.remote
+    def finish(self):
+        result={"state":"completed","source_sha256":sha(VIDEO),"artifacts":[{"name":"analysis.json","size":len(OUT),"sha256":sha(OUT),"media_type":"application/json"}]}
+        self.remote.update(state="completed",result=result,result_sha256=sha(canonical(result)))
+    def fetch(self,a,n,offset,length):return OUT[offset:offset+length]
+    def purge(self,a,digest):
+        assert digest==self.remote["result_sha256"]
+        self.purges+=1;return self.remote
+
+class DispatchTests(unittest.TestCase):
+    def setUp(self):
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        self.store=Store("owner",Path(tmp.name).resolve());self.client=Fake()
+        self.jid=self.store.create(request())["id"]
+        self.store.transition(self.jid,"awaiting_input","staging","intake")
+        root=safe_dir(safe_dir(self.store.root/"inputs")/self.jid)
+        (root/"source-0001.mp4").write_bytes(VIDEO)
+        (root/"manifest.json").write_text(json.dumps({"version":1,"files":[{"role":"source","file":"source-0001.mp4","size":len(VIDEO),"sha256":sha(VIDEO)}]}))
+        self.store.transition(self.jid,"staging","ready","verified",100)
+        self.dispatch=Dispatcher(self.store,self.client)
+    def test_success_persistent_attempt_and_verified_ack(self):
+        self.assertEqual(self.dispatch.tick(self.jid),"staging")
+        self.assertEqual(self.dispatch.tick(self.jid),"running")
+        self.assertEqual(self.client.starts,1)
+        self.assertEqual(self.store.get(self.jid)["state"],"processing")
+        self.client.finish()
+        with patch("app.modules.studio.dispatch.RESERVE",0):
+            self.assertEqual(self.dispatch.tick(self.jid),"delivering")
+            self.assertEqual(self.dispatch.tick(self.jid),"published")
+        self.assertEqual(self.store.get(self.jid)["state"],"completed")
+        self.assertEqual(self.client.purges,0)
+        restarted=Dispatcher(self.store,self.client)
+        self.assertEqual(restarted.tick(self.jid),"acknowledged")
+        self.assertEqual(restarted.tick(self.jid),"acknowledged")
+        self.assertEqual(self.client.purges,1)
+        self.assertEqual(self.client.creates,1)
+        self.assertEqual(self.store.output_path(self.jid,"analysis.json")[0].read_bytes(),OUT)
+    def test_all_intake_barrier(self):
+        self.store.create(request("b"*32))
+        with self.assertRaisesRegex(DispatchError,"pending Drive intake"):self.dispatch.tick(self.jid)
+        self.assertEqual(self.client.creates,0)
+    def test_ambiguous_create_never_recreate_missing(self):
+        self.client.fail_create=True
+        with self.assertRaises(DispatchError):self.dispatch.tick(self.jid)
+        self.client.remote=None
+        with self.assertRaises(RemoteError):self.dispatch.tick(self.jid)
+        self.assertEqual(self.client.creates,1)
+        self.assertEqual(self.store.get(self.jid)["state"],"ready")
+    def test_tampered_result_rejected(self):
+        self.dispatch.tick(self.jid);self.dispatch.tick(self.jid);self.client.finish()
+        self.client.remote["result_sha256"]="0"*64
+        with self.assertRaisesRegex(DispatchError,"Invalid result"):self.dispatch.tick(self.jid)
+        self.assertEqual(self.client.purges,0)
+    def test_worker_origin_rejects_untrusted(self):
+        with self.assertRaises(DispatchError):WorkerClient("https://example.org","x"*32,"y"*32,"1"*40,approved_gateway="https://example.org")
+        with self.assertRaises(DispatchError):WorkerClient("https://a.salad.cloud","x"*32,"y"*32,"1"*40,approved_gateway="https://b.salad.cloud")
+
+if __name__=="__main__":unittest.main()

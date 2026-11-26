@@ -1,0 +1,5 @@
+# Web dispatcher source checkpoint
+
+Internal adapter dispatch.py implements approved HTTPS Salad gateway authentication, exact worker source/protocol checks, owner-scoped persistent attempt IDs and intent-before-POST, verified single-video staging, resumable chunk upload, single-slot dispatch, scan review checkpoint, hash-verified result receipt and acknowledgement only after local durable receipt. Worker API v2 is required. Existing Drive intake and GPU configuration unchanged. Source tests are synthetic, not live GPU tests.
+
+Deliberately no browser route or automatic scheduler enabled. Full lifecycle, cancellation from UI, reference review/export continuation, ZIP/folder fan-out, analyzer reference profiles, Google Drive output delivery, global atomic intake barrier across intake/dispatch, and runtime acceptance still require implementation. No Salad start/stop/reallocate or VPS deployment. The root-approved exact gateway and approved worker SHA plus independent credentials must be provided by the operator to instantiate the client. Model-inclusive image remains on hold.
