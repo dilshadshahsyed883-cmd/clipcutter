@@ -6,6 +6,12 @@ on:
     paths:
       - 'ClipCutterGPU/**'
       - '.github/workflows/clipcutter-gpu-source-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ClipCutterGPU/**'
+      - '.github/workflows/clipcutter-gpu-candidate.yml'
+      - '.github/workflows/clipcutter-gpu-source-tests.yml'
   workflow_dispatch:
 
 permissions:
@@ -28,3 +34,5 @@ jobs:
           python -m pip install --only-binary=:all: pydantic==2.13.5
           python -m compileall -q worker tests
           python -m unittest tests.test_transport -v
+          bash -n build-candidate.sh check-main-gpu-tree.sh
+          bash tests/test_gpu_tree_gate.sh
