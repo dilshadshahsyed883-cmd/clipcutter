@@ -1,6 +1,6 @@
 # Owner-approved final GPU image contract — 26 November 2026
 
-BUILD HOLD: No GPU Docker build, workflow dispatch or publishing until owner explicitly approves completed finalization. GPU workflow is manual-only with the build job disabled. Independently maintain GPU source in ClipCutterGPU/ and Web source in ClipCutterWeb/ on main; source review/merge is not a build authorization. No EXE build ever. Do not start Salad or deploy. Existing published image is an incomplete candidate, not final.
+Current release policy: automatic private educational candidate builds on relevant main changes only. No automatic deployment, EXE, Salad start or paid GPU usage. See the current policy below.
 
 ## Self-contained worker
 - Include the exact existing PC SCRFD detector and ArcFace recognizer, CUDA/ONNX Runtime, FFmpeg, extractor, analyzer and private job API. Model files must be inside the image at /models, not downloaded or installed on startup. No runtime dependency installation.
@@ -10,19 +10,12 @@ BUILD HOLD: No GPU Docker build, workflow dispatch or publishing until owner exp
 - Web owns Drive intake, durable queue, dispatch/retry, result receipt/verification, independent worker credentials, Salad group lifecycle. All pending input verification before startup or dispatch; keep inputs on VPS through disconnect; no duplicate dispatch. Concat rule parity per ClipCutterWeb/GPU_CONFIG_RULES.md (8%/20s adjustable, 3 reallocations then 5-minute cooldown, 60s idle stop only after work and deliveries finish).
 - Finalize model rights, secure build supply, transport contract, retention/deletion, queue and lifecycle, source tests and acceptance checklist before image build. Real GPU/media acceptance follows separate deployment approval. Report any incomplete component before implementation or build. Do not claim final readiness from CPU-only smoke.
 
-## Superseding owner-directed educational build exception
+## Current owner-approved automatic private GPU release policy
 
-Owner explicitly requested the model-inclusive private educational image build
-and assumes licensing responsibility. For this build, vendor written
-clarification is not a blocking prerequisite; no third-party packaging rights
-or commercial license are represented as verified. The manual workflow requires
-an exact approved current-main SHA and private educational confirmation. The
-builder uses `CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED=1` instead of representing
-redistribution rights as verified. Private package verification, pinned model
-hashes, all smoke gates, immutable tags and digest verification remain required.
-This supersedes historical build-disabled statements for this testing build.
-No Salad start, paid GPU usage, Concat changes, EXE or VPS deployment.
+Automatic candidate builds are authorized for private, non-commercial educational testing only when GPU build inputs or GPU release workflow changes merge into main. This standing approval replaces the manual-only/each-build approval requirement and earlier build holds. Manual dispatch remains available with exact main SHA and explicit confirmation. No third-party redistribution rights or commercial license are represented as verified. No desktop EXE, Concat changes, automatic Salad deployment/start, paid GPU use, or VPS deployment.
 
-## Independent release rule (latest)
-
-The exact main SHA at manual dispatch remains the image revision and immutable tag. Current-main full commit equality is no longer required during the build or publication. Instead verify the pinned `ClipCutterGPU/` tree against the latest fetched main GPU tree. Web-only changes outside that directory may merge without invalidating the image; a changed GPU tree fails closed and requires a new approved build. Existing dispatched workflows retain their original logic. No change to private package, model, smoke, digest or deployment gates.
+- Build the exact main event SHA after source regression tests pass, with a clean checkout, pinned model hashes, private GHCR checks before staging and immediately before/after publication, CPU/image/HTTP smoke gates, immutable SHA tags and verified registry digest. No overwrites; check existing tags before building. Keep prior images for rollback.
+- Automatic build paths: GPU Dockerfile, .dockerignore, requirements, worker/, tests/, build and model staging/verification scripts, and GPU release/source-test workflows. Documentation, release notes, Web and desktop-only changes never trigger GPU builds. In-flight builds compare these same inputs against latest main; unrelated changes do not invalidate the image. If relevant inputs change, the old candidate fails closed and a new main-event build handles the new inputs.
+- Serialize builds for main; do not cancel running builds on Web changes. Pending runs may coalesce to the latest relevant main event.
+- Permanent model supply: use the previously verified private GHCR seed by immutable digest, copy only the two exact pinned model files without executing the seed, and verify size/SHA256 again. Preserve that seed image. Optional owner-supplied Drive ID/HTTPS ZIP secret overrides the seed; never commit credentials or model files. Registry access or model verification failure blocks publication. No runtime download.
+- Image publication is not deployment or physical GPU/media acceptance. Deployment remains separately authorized.

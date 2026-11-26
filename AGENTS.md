@@ -42,21 +42,12 @@ The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2
 
 The owner's latest instruction supersedes the earlier ZIP destination rule: **the final PC-testing source ZIP must be saved in the Windows Downloads folder**, as `Clipivo_V2_3_Windows.zip`. A direct browser download or a PowerShell command targeting the user's Downloads known folder is acceptable. The extracted application also belongs in Downloads as `Clipivo_V2/`. Python runtime, dependencies, models, settings and temporary setup files remain in LocalAppData. Verify ZIP structure before delivery; preserve existing user data and archived releases. No EXE build or EXE build workflow is authorized.
 
-## Owner-approved GPU build hold (latest instruction)
+## Current owner-approved automatic private GPU release policy
 
-No GPU Docker build or trigger until owner explicitly approves finalization. GPU workflow is manual-only with its build job disabled during the hold. GPU source belongs in ClipCutterGPU/ on main; Web source belongs in ClipCutterWeb/ on main. Source changes may be reviewed and merged independently without building. Do not enable build until owner approval. Follow docs/GPU_FINAL_IMAGE_CONTRACT.md. This hold supersedes general permission to build GPU candidates, without changing the permanent no-EXE rule.
+Automatic candidate builds are authorized for private, non-commercial educational testing only when GPU build inputs or GPU release workflow changes merge into main. This standing approval replaces the manual-only/each-build approval requirement and earlier build holds. Manual dispatch remains available with exact main SHA and explicit confirmation. No third-party redistribution rights or commercial license are represented as verified. No desktop EXE, Concat changes, automatic Salad deployment/start, paid GPU use, or VPS deployment.
 
-## Latest owner instruction — private educational image build
-
-The owner explicitly directs building the model-inclusive image for private,
-non-commercial educational testing and assumes licensing responsibility. This
-supersedes the earlier build hold and the requirement to wait for written vendor
-clarification for this testing build. It does not establish verified model
-redistribution rights or a commercial license. Enable only manual exact-main-SHA
-builds with explicit private educational approval; keep package-private checks,
-model hashes, all smoke tests, immutable tags and digest verification. No EXE,
-Concat changes, Salad starts or VPS deployment are authorized by this exception.
-
-## Latest owner rule — independent Web and GPU releases
-
-The approved manual GPU build remains pinned to the exact main commit at dispatch. Subsequent main updates outside `ClipCutterGPU/` do not cancel or invalidate that image build or publication. Compare the pinned `ClipCutterGPU` Git tree against current main before building and publishing; if GPU source differs, require renewed approval. Keep immutable original SHA tags, private package verification, model pins, smoke tests and digest checks. No automatic image rebuild on Web-only merge. Already dispatched runs use their original workflow; do not cancel them merely for a Web update. Web and GPU deployments remain separately authorized.
+- Build the exact main event SHA after source regression tests pass, with a clean checkout, pinned model hashes, private GHCR checks before staging and immediately before/after publication, CPU/image/HTTP smoke gates, immutable SHA tags and verified registry digest. No overwrites; check existing tags before building. Keep prior images for rollback.
+- Automatic build paths: GPU Dockerfile, .dockerignore, requirements, worker/, tests/, build and model staging/verification scripts, and GPU release/source-test workflows. Documentation, release notes, Web and desktop-only changes never trigger GPU builds. In-flight builds compare these same inputs against latest main; unrelated changes do not invalidate the image. If relevant inputs change, the old candidate fails closed and a new main-event build handles the new inputs.
+- Serialize builds for main; do not cancel running builds on Web changes. Pending runs may coalesce to the latest relevant main event.
+- Permanent model supply: use the previously verified private GHCR seed by immutable digest, copy only the two exact pinned model files without executing the seed, and verify size/SHA256 again. Preserve that seed image. Optional owner-supplied Drive ID/HTTPS ZIP secret overrides the seed; never commit credentials or model files. Registry access or model verification failure blocks publication. No runtime download.
+- Image publication is not deployment or physical GPU/media acceptance. Deployment remains separately authorized.

@@ -13,6 +13,7 @@ on:
       - '.github/workflows/clipcutter-gpu-candidate.yml'
       - '.github/workflows/clipcutter-gpu-source-tests.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -34,5 +35,5 @@ jobs:
           python -m pip install --only-binary=:all: pydantic==2.13.5
           python -m compileall -q worker tests
           python -m unittest tests.test_transport tests.test_runtime -v
-          bash -n build-candidate.sh check-main-gpu-tree.sh
+          bash -n build-candidate.sh check-main-gpu-tree.sh prepare-seed-models.sh
           bash tests/test_gpu_tree_gate.sh
