@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import socket
 from threading import Thread,BoundedSemaphore
 from urllib.parse import urlsplit,parse_qs
 from .runtime import warmup
@@ -21,6 +22,18 @@ def initialize():
     except Exception as exc:
         print("Worker warmup failed:",type(exc).__name__,str(exc),flush=True)
         status.update(ready=False,state="not_ready")
+
+class DualStackHTTPServer(ThreadingHTTPServer):
+    """Accept Salad gateway IPv6 traffic and local IPv4 health checks."""
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            super().server_bind()
+        except OSError as exc:
+            raise RuntimeError("Worker requires IPv4/IPv6 dual-stack binding") from exc
+
 
 class Handler(BaseHTTPRequestHandler):
     def setup(self):
@@ -99,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
 
 def main():
-    server=ThreadingHTTPServer(("0.0.0.0",int(os.environ.get("PORT","8080"))),Handler)
+    server=DualStackHTTPServer(("::",int(os.environ.get("PORT","8080"))),Handler)
     server.worker=Worker("/data/jobs",lambda:status["ready"])
     server.requests=BoundedSemaphore(8)
     def stop(*args):
