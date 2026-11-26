@@ -5,6 +5,10 @@ set +x
 umask 077
 [[ "$#" == 1 && "$1" =~ ^[a-f0-9]{40}$ ]] || { echo "Usage: bash ClipCutterGPU/build-candidate.sh <approved-main-sha>" >&2; exit 1; }
 SHA="$1"
+# Owner must explicitly approve final SHA and lawful redistribution before this build.
+[[ "${CLIPCUTTER_FINAL_APPROVED_SHA:-}" == "$SHA" && "${CLIPCUTTER_MODEL_REDISTRIBUTION_AUTHORIZED:-}" == 1 ]] || { echo "Final build and model rights approval required" >&2; exit 1; }
+[[ -n "${CLIPCUTTER_AUTHORIZED_MODEL_DIR:-}" ]] || { echo "Authorized local model directory required" >&2; exit 1; }
+
 REPO="https://github.com/dilshadshahsyed883-cmd/clipcutter.git"
 ROOT="$(git rev-parse --show-toplevel)"
 [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$SHA" ]] || { echo "Checkout SHA mismatch"; exit 1; }
@@ -24,6 +28,13 @@ trap cleanup EXIT
 mkdir "$WORK/src"
 if git -C "$ROOT" ls-tree -r "$SHA" ClipCutterGPU/ | grep -E '^(120000|160000) ' ; then echo "Unexpected symlink or submodule"; exit 1; fi
 git -C "$ROOT" archive "$SHA:ClipCutterGPU" | tar -xf - -C "$WORK/src"
+# External authorized files only. Never commit weights or credentials.
+python3 "$WORK/src/worker/model_pins.py" "$CLIPCUTTER_AUTHORIZED_MODEL_DIR"
+mkdir "$WORK/src/models"
+for model in det_10g.onnx w600k_r50.onnx; do
+  install -m 0444 "$CLIPCUTTER_AUTHORIZED_MODEL_DIR/$model" "$WORK/src/models/$model"
+done
+python3 "$WORK/src/worker/model_pins.py" "$WORK/src/models"
 # The mount is read-only and must be readable by nonroot UID 10001 in the container.
 chmod 0755 "$WORK" "$WORK/src"
 chmod -R a+rX "$WORK/src"

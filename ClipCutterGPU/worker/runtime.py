@@ -1,28 +1,13 @@
-"""GPU runtime verification; no network or automatic model downloads."""
-import hashlib
+"""GPU runtime verification, entirely offline model startup."""
 import os
 from pathlib import Path
-import re
-from threading import Event
+from .model_pins import verify_models
 
 def require_models(cancel=None):
-    if os.environ.get("CLIPCUTTER_MODEL_LICENSE_CONFIRMED")!="1":
-        raise RuntimeError("Operator must confirm authorized model weights")
-    root=Path(os.environ.get("CLIPCUTTER_MODEL_DIR","/models"))
-    if not root.is_absolute() or root.resolve()!=root or not root.is_dir():
-        raise RuntimeError("Model directory unavailable or unsafe")
-    for name,key in (("det_10g.onnx","CLIPCUTTER_DETECTOR_SHA256"),("w600k_r50.onnx","CLIPCUTTER_RECOGNIZER_SHA256")):
-        expected=os.environ.get(key,"")
-        p=root/name
-        if not re.fullmatch(r"[0-9a-f]{64}",expected) or p.is_symlink() or not p.is_file():
-            raise RuntimeError("Missing model or pinned digest: "+name)
-        digest=hashlib.sha256()
-        with p.open("rb") as f:
-            for chunk in iter(lambda:f.read(1024*1024),b""):
-                if cancel is not None and cancel.is_set(): raise InterruptedError("Cancelled")
-                digest.update(chunk)
-        if digest.hexdigest()!=expected: raise RuntimeError("Model digest mismatch: "+name)
-    return root
+    root=Path("/models")
+    if os.environ.get("CLIPCUTTER_MODEL_DIR","/models") != "/models":
+        raise RuntimeError("Worker requires packaged model directory /models")
+    return verify_models(root,cancel)
 
 def warmup():
     import numpy as np

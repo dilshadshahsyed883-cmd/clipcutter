@@ -12,6 +12,8 @@ from worker.extractor.vendor.limits import bounded_parts
 from worker.extractor.vendor.video_probe import probe_video
 
 def main():
+    from worker.model_pins import verify_models
+    verify_models(Path("/models"))
     expected=os.environ["EXPECTED_SOURCE_SHA"]
     assert os.environ["CLIPCUTTER_SOURCE_SHA"]==expected
     installed=Path("/opt/clipcutter")
@@ -51,7 +53,7 @@ def main():
             assert abs(probe_video(p,include_keyframes=False).duration_ms-2000)<=150
         assert hashlib.sha256(video.read_bytes()).hexdigest()==digest
     return {"source_sha":expected,"contract_version":1,"synthetic_cpu_export":"passed",
-        "request_contracts":"passed","source_hashes":"passed","physical_gpu_verified":False,
+        "packaged_models":"passed","request_contracts":"passed","source_hashes":"passed","physical_gpu_verified":False,
         "runtime_versions":{x:importlib.metadata.version(x) for x in ("av","numpy","opencv-python-headless","onnxruntime-gpu","pydantic")}}
 
 if __name__=="__main__":
