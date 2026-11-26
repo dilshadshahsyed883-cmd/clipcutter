@@ -26,10 +26,10 @@ def assign(groups,embedding,used,threshold):
     if score>=threshold and score-runner>=.08: return i
     groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
-def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None):
+def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True):
     if step<=0 or not 0<threshold<1: raise ValueError('Invalid analysis settings')
     folder=Path(folder); folder.mkdir(parents=True,exist_ok=False); refs=folder/'references'; refs.mkdir()
-    started=time.perf_counter(); engine=Engine(models,gpu,size); cap=cv2.VideoCapture(str(video)); groups=[]; frames=0; last=-1.; next_t=0.; observed=0; last_live=0
+    started=time.perf_counter(); engine=engine or Engine(models,gpu,size); cap=cv2.VideoCapture(str(video)); groups=[]; frames=0; last=-1.; next_t=0.; observed=0; last_live=0
     try:
         if not cap.isOpened(): raise RuntimeError('Cannot decode video')
         fps=cap.get(cv2.CAP_PROP_FPS); count=cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -71,7 +71,8 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
         duration=max(last+1/fps, duration)
         data={'decoded_frames':frames,'analyzed_frames':observed,'version':2,'source':str(Path(video).resolve()),'duration':round(duration,3),'sample_interval':step,'threshold':threshold,'detector_size':size,'device':engine.device,'warning':engine.warning,'elapsed_seconds':round(time.perf_counter()-started,2),'people':groups,'filters':filters or {}}
         for g in groups: g.pop('_sum')
-        save_project(folder,data); return data
+        if persist: save_project(folder,data)
+        return data
     finally: cap.release()
 
 def refresh(data):
