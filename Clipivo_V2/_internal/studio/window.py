@@ -39,11 +39,21 @@ class SettingsPage(QWidget):
     def save(self):
         if self.window._video_job_running() or self.window.batch_page.is_running():return QMessageBox.warning(self,'Settings','Wait for person analysis to finish before changing models.')
         if self.clip_min.value()>self.clip_max.value():return QMessageBox.warning(self,'Clip limits','Minimum cannot exceed maximum.')
+        chosen=Path(self.models.text()) if self.models.text().strip() else None
+        if self.custom.isChecked():
+            from v22.model_locator import valid
+            if not valid(chosen):return QMessageBox.warning(self,'Custom model','Choose a folder containing both compatible ONNX files.')
+        elif chosen:
+            from .models import verified
+            try:ok=verified(chosen)
+            except OSError as exc:return QMessageBox.warning(self,'Model verification',str(exc))
+            if not ok:return QMessageBox.warning(self,'Model verification','Default weights failed checksum verification. Clear the folder for automatic discovery, or choose verified weights.')
         save_settings({'clip_limits':dict(enabled=self.limits_on.isChecked(),minimum=self.clip_min.value(),maximum=self.clip_max.value())})
         save_settings(dict(capcut_drafts=self.capcut_drafts.text(),models=self.models.text(),custom_models=self.custom.isChecked(),gpu=self.gpu.isChecked(),step=self.step.value(),threshold=self.threshold.value(),size=int(self.size.currentText())))
         # Reuse selected model folder in upstream extraction as well.
-        self.window.face_engine.model_dir=Path(self.models.text()) if self.models.text() else None
+        self.window.face_engine.model_dir=chosen
         self.window.face_engine._application=None
+        self.window.wide_face_engine=None
         QMessageBox.information(self,'Settings','Settings saved for future analyses.')
     def import_legacy(self):
         if self.window._video_job_running() or self.window.batch_page.is_running():return QMessageBox.warning(self,'People Library','Finish active work before importing profiles.')
