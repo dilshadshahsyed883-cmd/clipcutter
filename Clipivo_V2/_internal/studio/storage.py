@@ -50,6 +50,8 @@ class Profiles:
             p=(Path(folder)/rel).resolve()
             if not p.is_relative_to(Path(folder).resolve()): raise ValueError('Reference path escapes project')
             paths.append((p,p.read_bytes()))
+        if group.get('ignored') or group.get('filtered'):raise ValueError('Restore this person before saving a reusable profile.')
+        if not paths:raise ValueError('No reference images to save.')
         if group.get('identity_status','manual') not in ('manual','matched'):
             raise ValueError('Rename or confirm this person before saving a reusable identity.')
         linked=group.get('library_id')
@@ -60,6 +62,7 @@ class Profiles:
             raise ValueError('A profile with this name exists. Use a distinct name or the matched profile.')
         person=existing or self.store.create_character(group['name'])
         before=self.store.fingerprint(person.id)
+        old=self._read(person.id) if model_signature and existing else {}
         known={r.digest for r in self.store.references(person.id)}
         for p,blob in paths:
             digest=sha256(blob).hexdigest()
@@ -68,15 +71,17 @@ class Profiles:
         # Existing reference-only/unknown-model data is rebuilt on the next analysis.
         # Never relabel older vectors as belonging to the current model.
         if model_signature:
-            old=self._read(person.id)
-            obs=sorted(group['observations'],key=lambda x:-x['quality'])[:30]
-            embeddings=[o['embedding'] for o in obs if o.get('embedding')]
+            chosen=set(group['references'])
+            obs=sorted((o for o in group['observations'] if o.get('image') in chosen),key=lambda x:-x['quality'])[:30]
+            embeddings=[o['embedding'] for o in obs if o.get('embedding') is not None]
+            if not embeddings:return person.id
             previous=old.get('embeddings',[]) if old.get('model_signature')==model_signature else []
             if existing and previous and old.get('fingerprint')==before:
                 embeddings=previous+embeddings
             elif existing:
                 # Missing vectors for existing references: let entries() rebuild all.
                 return person.id
+            embeddings=list({tuple(e):e for e in embeddings}.values())
             self._write(person.id,{'id':person.id,'embeddings':embeddings[-60:],
                 'model_signature':model_signature,'fingerprint':self.store.fingerprint(person.id)})
         elif not existing:
@@ -113,5 +118,8 @@ class Profiles:
             if cancel():raise InterruptedError('Cancelled')
             if not embeddings:continue
             payload={'id':c.id,'embeddings':embeddings,'model_signature':model_signature,'fingerprint':fingerprint}
+            # References may have been edited in the People Library during analysis.
+            # Do not publish a stale fingerprint or reuse an obsolete identity.
+            if self.store.fingerprint(c.id)!=fingerprint:continue
             self._write(c.id,payload);result.append(dict(payload,name=c.name))
         return result
