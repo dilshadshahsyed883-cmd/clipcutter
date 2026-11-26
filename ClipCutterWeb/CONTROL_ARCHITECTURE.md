@@ -27,3 +27,13 @@ Approved by owner on 2026-11-26. Planning only; no implementation or deployment 
 5. Verify VPS resources, DNS, TLS, reverse proxy and isolated deployment; deploy only when authorized and tested.
 
 No EXE builds, executable packaging, or GitHub Actions build workflows. This document does not authorize provisioning paid GPU resources or modifying existing production services.
+
+## Approved deployment method (Concat Web parity)
+Owner explicitly requested the Concat Web deployment method. Verified references on concat-web/main: `deploy/RELEASE_GATES.md`, `deploy/manual-integration-release.sh`, `.github/workflows/deploy.yml`. Adapt the method, not the Concat-specific service or paths.
+
+- Manual VPS terminal only; no GitHub Actions deployment, remote SSH automation or Tailscale dependency. Source changes reviewed and tested, merged into main; verify exact approved 40-hex SHA against remote main and cloned source before staging. Package only the ClipCutterWeb subtree, verify archive digest and use a root-owned guarded helper with a release lock.
+- Proposed independent names (verify no conflicts on host): user `clipcutterweb`, service `clipcutter-web.service`, helper `/usr/local/sbin/clipcutter-web-deploy`, immutable releases `/srv/clipcutter-web/releases/<SHA>`, current symlink `/srv/clipcutter-web/current`, data `/var/lib/clipcutter-web`, root-owned 0600 environment `/etc/clipcutter-web/clipcutter-web.env`, backups `/var/backups/clipcutter-web`. Assign a verified free loopback port, never reuse Concat's port. Independent local admin setup, no public signup, no secrets in Git or terminal output.
+- Implement ClipCutter-specific bootstrap, preflight and stage commands; online SQLite backups, private state/config/helper backups, integrity checks, atomic promotion, health identity and anonymous access denial, restore prior release on failure. Persistent data is not reset. Keep deployment distinct from GPU job lifecycle.
+- First stage loopback, then separate guarded Nginx HTTPS cutover for `clip.scenebuilder.online`, validate DNS, certificate, route conflicts and nginx syntax, reload only if checks pass, verify existing sites remain healthy and rollback only ClipCutter changes on failure.
+- Do not invoke Concat's existing helper, modify Concat service, Nginx vhost, storage or GPU group. Do not add EXE or GitHub Actions build workflows. Run source-level tests before release.
+- This is a deployment specification, not a working script or a VPS deployment. Actual free port, host prerequisites, authentication configuration, DNS/TLS and GPU compatibility remain unverified.
