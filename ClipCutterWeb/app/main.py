@@ -9,6 +9,7 @@ from app.config import load_settings
 from app.modules.admin.security import COOKIE, SESSION_COOKIE_MAX_AGE
 from app.modules.admin.routes import router as admin_router
 from app.modules.dashboard.routes import router as dashboard_router
+from app.modules.studio.routes import router as studio_router
 
 ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -20,6 +21,7 @@ def create_app():
     app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
     app.include_router(admin_router)
     app.include_router(dashboard_router)
+    app.include_router(studio_router)
 
     @app.middleware("http")
     async def renew_cookie(request: Request, call_next):
