@@ -48,7 +48,8 @@ class StudioTests(unittest.TestCase):
     def test_identity_requirement_blocks_wrong_people(self):
         s=dict(start=0,end=1,people=['A'],visual=[1,0]);ref=dict(path='ref',width=100,height=100,scenes=[s]);m=dict(path='other',width=100,height=100,scenes=[dict(start=0,end=3,people=['B'],visual=[1,0])]);self.assertEqual(scene_candidates(s,ref,[m]),[])
     def test_multi_person_requirement(self):
-        s=dict(start=0,end=1,people=['A','B'],visual=[1,0]);ref=dict(path='ref',width=100,height=100,scenes=[s]);m=dict(path='other',width=100,height=100,scenes=[dict(start=0,end=3,people=['A','B'],visual=[1,0])]);self.assertEqual(len(scene_candidates(s,ref,[m])),1)
+        s=dict(start=0,end=1,people=['A','B'],confirmed_people=['A','B'],visual=[1,0]);ref=dict(path='ref',width=100,height=100,scenes=[s]);m=dict(path='other',width=100,height=100,scenes=[dict(start=0,end=3,people=['A','B'],confirmed_people=['A','B'],visual=[1,0])]);self.assertEqual(len(scene_candidates(s,ref,[m])),1)
+        m['scenes'][0].pop('confirmed_people');self.assertEqual(scene_candidates(s,ref,[m]),[])
     def test_no_automatic_approval(self):
         s=dict(start=0,end=1,people=[],visual=[1,0]);ref=dict(path='ref',width=100,height=100,scenes=[s]);m=dict(path='other',width=100,height=100,scenes=[dict(s,start=0,end=2)]);p=build_plan(ref,[m]);self.assertFalse(p['rows'][0]['approved']);self.assertTrue(p['rows'][0]['manual_review'])
     def test_short_footage_excluded(self):

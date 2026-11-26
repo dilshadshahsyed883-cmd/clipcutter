@@ -27,7 +27,7 @@ def draw(rng,items,weights):
     return items[-1]
 
 def bounded_parts(length,minimum,maximum):
-    length=round(float(length)*1e6);lo=round(minimum*1e6);hi=round(maximum*1e6)
+    length=round(float(length)*1e6);lo=math.ceil(minimum*1e6-1e-8);hi=math.floor(maximum*1e6+1e-8)
     if lo<=0 or hi<lo:raise ValueError('Clip durations must satisfy 0 < minimum ≤ maximum')
     if length<lo:return []
     n=math.ceil(length/hi)
@@ -45,36 +45,107 @@ def constrain_ranges(ranges,minimum,maximum):
         pieces=bounded_parts(b-a,minimum,maximum);out.extend((a+x,a+y) for x,y in pieces);discarded+=b-a-sum(y-x for x,y in pieces)
     return out,discarded
 
-def build_picked_plan(reference,media,minimum=2.5,maximum=4.,seed=1,cooldown=2,allow_repeats=True,group_weights=None):
-    if not math.isfinite(minimum) or not math.isfinite(maximum) or not 0<minimum<=maximum:raise ValueError('Clip durations must satisfy 0 < minimum ≤ maximum')
-    total=round(reference['duration']*1e6);lo=round(minimum*1e6);hi=round(maximum*1e6)
-    if total<=0 or total>86400*1e6:raise ValueError('Timeline length must be between 0 and 24 hours')
-    least=math.ceil(total/hi);most=total//lo
-    if least>most:raise ValueError('This total duration cannot be covered within minimum/maximum clip lengths. Adjust limits.')
-    rng=Random(seed);count=least+int(rng.unit()*(most-least+1));sources=[]
-    for m in media:
-        for i,s in enumerate(m['scenes']):
-            available=round((s['end']-s['start'])*1e6)
-            group=keyword(m['path']);weight=(group_weights or {}).get(group,1 if not group_weights else 0)
-            if available>=lo and weight>0:sources.append(dict(path=m['path'],scene=i,start=s['start'],end=s['end'],available=available,group=group,weight=float(weight),used=int(m.get('used_count',0))))
-    if not sources:raise ValueError('No footage long enough for the minimum clip length')
-    uses=[0]*len(sources);recent=[];rows=[];at=0;warnings=[]
+def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
+                      cooldown=2, allow_repeats=True, group_weights=None, cancel=lambda:False):
+    if not all(math.isfinite(v) for v in (minimum, maximum, reference['duration'])) or not 0 < minimum <= maximum:
+        raise ValueError('Clip durations must satisfy 0 < minimum ≤ maximum')
+    scale = float(reference.get('fps') or 1e6)
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError('Invalid reference frame rate')
+    total = round(reference['duration']*scale)
+    if abs(total/scale-reference['duration']) > 1e-6:
+        raise ValueError('Reference duration is not representable on its frame grid')
+    lo, hi = math.ceil(minimum*scale-1e-8), math.floor(maximum*scale+1e-8)
+    if lo <= 0 or hi < lo or not 0 < reference['duration'] <= 86400:
+        raise ValueError('Invalid timeline or clip limits')
+    if cooldown < 0:
+        raise ValueError('Cooldown must be nonnegative')
+    def check_cancel():
+        if cancel(): raise InterruptedError('Clip selection cancelled')
+    sources = []
+    for m in sorted(media, key=lambda x: x['path']):
+        check_cancel()
+        for i, scene in enumerate(m['scenes']):
+            available = math.floor((scene['end']-scene['start'])*scale+1e-7)
+            group = keyword(m['path'])
+            weight = float((group_weights or {}).get(group, 0 if group_weights else 1))
+            if not math.isfinite(weight) or weight < 0:
+                raise ValueError('Invalid keyword weight')
+            if available >= lo and weight > 0:
+                sources.append(dict(path=m['path'], scene=i, start=scene['start'],
+                    end=scene['end'], cap=min(available, hi), available=available,
+                    group=group, weight=weight, used=max(0,int(m.get('used_count',0)))))
+    if not sources:
+        raise ValueError('No eligible footage long enough for the minimum clip length')
+    # No reuse means no repeated source FILE, even if it has several indexed scenes.
+    from pathlib import Path
+    for s in sources:
+        s['source_key'] = str(Path(s['path']).resolve())
+    file_caps = {}
+    for s in sources:
+        file_caps[s['source_key']] = max(file_caps.get(s['source_key'],0),s['cap'])
+    caps = sorted((s['cap'] for s in sources) if allow_repeats else file_caps.values(), reverse=True)
+    prefix = [0]
+    for c in caps:
+        prefix.append(prefix[-1]+c)
+    least = math.ceil(total/caps[0])
+    most = total//lo
+    if not allow_repeats:
+        most = min(most, len(caps))
+    feasible = [n for n in range(least, min(most,100000)+1)
+                if allow_repeats or prefix[n] >= total]
+    if not feasible:
+        raise ValueError('Total duration cannot be covered within clip limits and source/repeat constraints')
+    rng = Random(seed)
+    count = feasible[int(rng.unit()*len(feasible))]
+    uses = [0]*len(sources)
+    recent, rows, warnings = [], [], []
+    at = 0
+    used_files = set()
     for i in range(count):
-        remaining=total-at;left=count-i;lower=max(lo,remaining-(left-1)*hi);upper=min(hi,remaining-(left-1)*lo)
-        candidates=[j for j,s in enumerate(sources) if s['available']>=lower and (allow_repeats or uses[j]==0)]
-        if not candidates:raise ValueError(f'Source/repeat constraints exhausted at {at/1e6:.3f}s. Enable repeats, add footage or change durations.')
-        fresh=[j for j in candidates if sources[j]['path'] not in recent[-cooldown:]] if cooldown else candidates
-        if fresh:candidates=fresh
-        elif cooldown and recent:
-            warning='Source cooldown relaxed because no unused candidate is available'
-            if warning not in warnings:warnings.append(warning)
-        groups=sorted({sources[j]['group'] for j in candidates})
-        # Group-first selection prevents a larger folder from multiplying its desired share.
-        selected_group=draw(rng,groups,[next(s['weight'] for s in sources if s['group']==g) for g in groups]);candidates=[j for j in candidates if sources[j]['group']==selected_group]
-        picked=draw(rng,candidates,[1/((1+sources[j]['used'])*(1+uses[j])) for j in candidates]);s=sources[picked]
-        upper=min(upper,s['available']);duration=lower+round(rng.unit()*(upper-lower));trim=s['start']+int(rng.unit()*(s['available']-duration))/1e6
-        original=dict(start=at/1e6,end=(at+duration)/1e6,people=[],visual=[0.]*128,activity='',framing='',environment='',angle='')
-        selected=dict(path=s['path'],scene=s['scene'],start=s['start'],end=s['end'],trim_start=trim,score=None,picked=True)
-        rows.append(dict(original=original,selected=selected,candidates=[],approved=False,manual_review=True));at+=duration;uses[picked]+=1;recent.append(s['path'])
-    ref=copy.deepcopy(reference);ref['scenes']=[r['original'] for r in rows]
-    return dict(version=1,reference=ref,rows=rows,mode='concat_picker',picker=dict(minimum=minimum,maximum=maximum,seed=seed,cooldown=cooldown,allow_repeats=allow_repeats),warnings=warnings)
+        check_cancel()
+        remaining, left = total-at, count-i-1
+        available_ids = [j for j in range(len(sources)) if allow_repeats or sources[j]['source_key'] not in used_files]
+        ordered = sorted((k for k in file_caps if k not in used_files),key=lambda k:(-file_caps[k],k)) if not allow_repeats else []
+        top = ordered[:left]
+        future = sum(file_caps[k] for k in top)
+        top_set = set(top)
+        spare = file_caps[ordered[left]] if left < len(ordered) else 0
+        bounds = {}
+        for j in available_ids:
+            key = sources[j]['source_key']
+            capacity = left*caps[0] if allow_repeats else future-(file_caps[key]-spare if key in top_set else 0)
+            if not allow_repeats and len(ordered)-1 < left:
+                continue
+            lower = max(lo, remaining-capacity)
+            upper = min(sources[j]['cap'], remaining-left*lo)
+            if lower <= upper:
+                bounds[j] = (lower,upper)
+        if not bounds:
+            raise ValueError('No feasible source allocation remains')
+        candidates = list(bounds)
+        fresh = [j for j in candidates if sources[j]['path'] not in recent[-cooldown:]] if cooldown else candidates
+        if fresh:
+            candidates = fresh
+        elif cooldown and recent and not warnings:
+            warnings.append('Source cooldown relaxed to preserve a feasible duration')
+        groups = sorted({sources[j]['group'] for j in candidates})
+        group = draw(rng,groups,[next(sources[j]['weight'] for j in candidates if sources[j]['group']==g) for g in groups])
+        candidates = [j for j in candidates if sources[j]['group']==group]
+        j = draw(rng,candidates,[1/((1+sources[j]['used'])*(1+uses[j])) for j in candidates])
+        s = sources[j]
+        lower, upper = bounds[j]
+        duration = lower+round(rng.unit()*(upper-lower))
+        trim = s['start']+int(rng.unit()*(s['available']-duration))/scale
+        original = dict(start=at/scale,end=(at+duration)/scale,people=[],visual=[0.]*128,activity='',framing='',environment='',angle='')
+        selected = dict(path=s['path'],scene=s['scene'],start=s['start'],end=s['end'],
+                        trim_start=trim,target_duration=duration/scale,speed=1.,score=None,picked=True)
+        rows.append(dict(original=original,selected=selected,candidates=[],approved=False,manual_review=True,identity_required=[]))
+        at += duration
+        uses[j] += 1
+        used_files.add(s['source_key'])
+        recent.append(s['path'])
+    # Retain actual reference scenes; the new timeline is represented by rows only.
+    return dict(version=1,reference=copy.deepcopy(reference),rows=rows,mode='concat_picker',
+                picker=dict(minimum=minimum,maximum=maximum,seed=seed,cooldown=cooldown,
+                            allow_repeats=allow_repeats,group_weights=group_weights),warnings=warnings)

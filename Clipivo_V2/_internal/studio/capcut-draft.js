@@ -42,11 +42,19 @@ function detect(env) {
   const apps = path.join(root, 'Apps'), exe = path.join(apps, 'CapCut.exe');
   out.exe = fs.existsSync(exe) ? exe : '';
   out.version = highestVersionDir(apps);
+  if (!out.exe && out.version) { const versionExe = path.join(apps, out.version, 'CapCut.exe'); if (fs.existsSync(versionExe)) out.exe = versionExe; }
   let drafts = path.join(root, 'User Data', 'Projects', 'com.lveditor.draft');
   try { // the user can move the drafts folder in CapCut: the choice is stored in its globalSetting file
     const s = fs.readFileSync(path.join(root, 'User Data', 'Config', 'globalSetting'), 'utf8');
-    const m = s.match(/^currentCustomDraftPath=(.+)$/m);
-    if (m) { const p = m[1].trim().replace(/\\\\/g, '\\'); if (p && fs.existsSync(p)) { drafts = p; out.draftsFromSettings = true; } }
+    const m = s.match(/^\s*currentCustomDraftPath\s*=([^\r\n]*)/m);
+    if (m) {
+      const p = m[1].trim().replace(/^"|"$/g, '').replace(/\\\\/g, '\\');
+      if (p) {
+        out.draftsFromSettings = true;
+        if (path.isAbsolute(p) && fs.existsSync(p) && fs.statSync(p).isDirectory()) drafts = p;
+        else { drafts = ''; out.draftsSettingError = 'Configured CapCut drafts folder is unavailable. Set a valid manual folder in Clipivo Settings.'; }
+      }
+    }
   } catch (_) {}
   out.draftsRoot = drafts;
   out.installed = !!out.exe || fs.existsSync(drafts);
@@ -59,7 +67,8 @@ function compat(d) {
   if (!d.exe) notes.push('CapCut.exe was not found, so Z Studio cannot start CapCut for you. The project is still written to the drafts folder.');
   if (!d.version) notes.push('The CapCut version could not be read. The project layout was written for CapCut 9.4 and has not been verified against this version.');
   else if (parseInt(d.version, 10) !== 9) notes.push(`CapCut ${d.version} was detected. The project layout was written for CapCut 9.4 and has not been verified against ${d.version}. If CapCut does not list the project or reports a problem, use "Media folder + SRT" instead.`);
-  return { level: notes.length ? 'warn' : 'ok', notes };
+  notes.push('Native playback has not been verified in installed CapCut. Open the Home screen and select the new draft.');
+  return { level: 'warn', notes };
 }
 function isRunning() {
   return new Promise(res => {
@@ -124,11 +133,36 @@ function makePlan(payload, media) {
   const notes = [], warn = m => { if (!notes.includes(m)) notes.push(m); };
   const W = payload.W || 1920, H = payload.H || 1080, zoomMin = payload.zoomMinSec || 5;
   const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0, separateLayers: payload.separateLayers === true, singleVisualTrack: payload.singleVisualTrack === true };
+  plan.strictTimeline = payload.strictTimeline === true;
   let prev = 0;
+  if (plan.strictTimeline) {
+    if (!Array.isArray(payload.images) || !payload.images.length) throw Error('No approved clips');
+    let cursor = 0;
+    for (const [i, c] of payload.images.entries()) {
+      if (!c || !c.image || c.kind !== 'video' || !Number.isFinite(c.start) || !Number.isFinite(c.end) ||
+          us(c.start) !== cursor || c.start < 0 || us(c.end) <= cursor ||
+          !Number.isFinite(c.trimStart) || c.trimStart < 0 ||
+          !Number.isFinite(c.speed) || c.speed < 0.67 || c.speed > 1.5)
+        throw Error('Invalid reviewed timeline at clip ' + (i + 1));
+      const m = media[c.image];
+      const sourceEnd = us(c.trimStart) + us((us(c.end) - cursor) / US * c.speed);
+      if (!m || !Number.isFinite(m.duration) || sourceEnd > us(Math.min(m.duration, m.videoDuration ?? m.duration)))
+        throw Error('Source range exceeds available video at clip ' + (i + 1));
+      cursor = us(c.end);
+    }
+    if (payload.voice) {
+      const a = payload.voice, m = media[a.file];
+      if (!m || !m.hasAudio || a.start !== 0 || a.trimStart !== 0 || us(a.dur) !== cursor ||
+          us(Math.min(m.duration, m.audioDuration ?? m.duration)) < cursor)
+        throw Error('Audio does not cover the reviewed timeline');
+    }
+    if ((payload.music || []).length || (payload.sfx || []).length || (payload.captions || []).length || (payload.titles || []).length)
+      throw Error('Additional tracks are unsupported in strict Clipivo export');
+  }
   const imgs = (payload.images || []).filter(c => c && c.image).slice().sort((a, b) => a.start - b.start);
   imgs.forEach((c, i) => {
     const start = Math.max(c.start, prev); if (start >= c.end) { warn(`Clip ${i + 1} overlaps the previous one completely and was skipped.`); return; }
-    const dur = +(c.end - start).toFixed(3), info = media[c.image] || {};
+    const dur = plan.strictTimeline ? (us(c.end) - us(start)) / US : +(c.end - start).toFixed(3), info = media[c.image] || {};
     if (start - prev > 0.05) plan.gaps++;
     const m = motionOf(c, dur, zoomMin);
     plan.images.push({ n: plan.images.length + 1, file: c.image, kind: c.kind === 'video' ? 'video' : 'photo', start, dur, trimStart: c.trimStart || 0, speed: c.speed || 1, w: info.w || 0, h: info.h || 0, mediaDur: info.duration || 0, hasAudio: c.kind === 'video' && c.hasAudio !== false && info.hasAudio !== false,
@@ -252,8 +286,8 @@ function buildContent(plan, files, timelineId) {
     const main = trackOf('video', group.name);
     const baseTrack = ti === 0;
     for (const c of group.clips) {
-      const f = files[c.file] || c.file; let mat = matFor.get(f);
-      if (!mat) { mat = videoMaterial(f, c.kind, c); M.videos.push(mat); matFor.set(f, mat); }
+      const f = files[c.file] || c.file; let mat = matFor.get('video:' + f);
+      if (!mat) { mat = videoMaterial(f, c.kind, c); M.videos.push(mat); matFor.set('video:' + f, mat); }
       main.segments.push(segment({ kind: 'video', main: baseTrack, materialId: mat.id, refs: refs([speedM(c.speed), placeholderM(), canvasM(), animM(), soundMapM(), colorM(), vocalM()]), trackIndex: ti, renderIndex: ti,
         source: { start: c.kind === 'photo' ? 0 : us(c.trimStart), duration: us(c.dur * (c.speed || 1)) }, speed: c.speed || 1, target: { start: us(c.start), duration: us(c.dur) }, volume: c.volume, scale: c.m.scale, x: c.m.x, y: c.m.y, rotation: c.m.rotation, alpha: c.m.alpha, flipH: c.m.flipH, flipV: c.m.flipV, kf: c.m.kf }));
     }
@@ -262,7 +296,7 @@ function buildContent(plan, files, timelineId) {
   const audio = (list, name) => {
     if (!list.length) return; const t = trackOf('audio', name);
     for (const a of list) {
-      const f = files[a.file] || a.file; let mat = matFor.get(f); if (!mat) { mat = audioMaterial(f, a); M.audios.push(mat); matFor.set(f, mat); }
+      const f = files[a.file] || a.file; let mat = matFor.get('audio:' + f); if (!mat) { mat = audioMaterial(f, a); M.audios.push(mat); matFor.set('audio:' + f, mat); }
       t.segments.push(segment({ kind: 'audio', materialId: mat.id, refs: refs([speedM(), placeholderM(), beatM(), soundMapM(), vocalM()]), trackIndex: ti, source: { start: us(a.trimStart), duration: us(a.dur) }, target: { start: us(a.start), duration: us(a.dur) }, volume: a.volume }));
     }
     tracks.push(t); ti++;
@@ -299,7 +333,8 @@ function copyMedia(plan, mediaDir) {
 function writeProject({ plan, drafts, folderName }) {
   if (!plan.images.length && !plan.voice.length) throw new Error('There is nothing to send: add pictures or a voiceover to the timeline first.');
   fs.mkdirSync(drafts, { recursive: true });
-  const name = uniqueFolder(drafts, folderName || plan.name), stage = path.join(drafts, '.zs-staging-' + crypto.randomBytes(4).toString('hex')), finalDir = path.join(drafts, name);
+  drafts = path.resolve(drafts);
+  const name = plan.strictTimeline ? safeName(folderName || plan.name, 'Clipivo Replacement') + ' - ' + crypto.randomUUID().slice(0, 12) : uniqueFolder(drafts, folderName || plan.name), stage = path.join(drafts, '.zs-staging-' + crypto.randomBytes(4).toString('hex')), finalDir = path.join(drafts, name);
   const timelineId = uid(), draftId = uid(), nowUs = Date.now() * 1000, nowS = Math.floor(Date.now() / 1000);
   try {
     const files = copyMedia(plan, path.join(stage, 'Z Studio Media'));
@@ -331,6 +366,11 @@ function writeProject({ plan, drafts, folderName }) {
       draft_root_path: drafts.replace(/\//g, '\\'), draft_segment_extra_info: [], draft_timeline_materials_size_: 0, draft_type: '', draft_web_article_video_enter_from: '', pippit_avatar_url: '', pippit_extra_info: '', pippit_id: '', pippit_user_name: '', tm_draft_cloud_completed: '', tm_draft_cloud_entry_id: -1, tm_draft_cloud_modified: 0,
       tm_draft_cloud_parent_entry_id: -1, tm_draft_cloud_space_id: -1, tm_draft_cloud_user_id: -1, tm_draft_create: nowUs, tm_draft_modified: nowUs, tm_draft_removed: 0, tm_duration: content.duration };
     wj(path.join(stage, 'draft_meta_info.json'), meta);
+    if (plan.strictTimeline) {
+      const issues = verifyStrictProject(stage, plan, finalFiles, finalDir);
+      if (issues.length) throw Error('Draft verification failed before publication: ' + issues.join('; '));
+    }
+    if (fs.existsSync(finalDir)) throw Error('Draft name already exists; no existing project was changed');
     fs.renameSync(stage, finalDir);
     return { name, folder: finalDir, draftId, timelineId, duration: content.duration / US, tracks: content.tracks.length, segments: content.tracks.reduce((n, t) => n + t.segments.length, 0), files: finalFiles };
   } catch (err) { try { fs.rmSync(stage, { recursive: true, force: true }); } catch (_) {} throw err; }
@@ -391,6 +431,62 @@ function verifyProject(folder, plan) {
   return issues;
 }
 
+// Verify the exact reviewed Clipivo timeline, including both JSON copies and copied assets.
+function verifyStrictProject(folder, plan, files, publishedFolder = folder) {
+  const issues = [];
+  const read = p => JSON.parse(fs.readFileSync(path.join(folder, p), 'utf8'));
+  const check = (ok, msg) => { if (!ok) issues.push(msg); };
+  try {
+    const c = read('draft_content.json'), meta = read('draft_meta_info.json');
+    const project = read(path.join('Timelines', 'project.json'));
+    check(project.main_timeline_id === c.id && project.timelines.some(t => t.id === c.id), 'Main timeline ID mismatch');
+    const nested = read(path.join('Timelines', c.id, 'draft_content.json'));
+    check(JSON.stringify(c) === JSON.stringify(nested), 'Nested timeline differs from top-level timeline');
+    check(JSON.stringify(c) === JSON.stringify(read('draft_content.json.bak')), 'Top-level backup mismatch');
+    check(JSON.stringify(c) === JSON.stringify(read(path.join('Timelines', c.id, 'draft_content.json.bak'))), 'Nested backup mismatch');
+    const total = us(plan.images[plan.images.length - 1].start) + us(plan.images[plan.images.length - 1].dur);
+    check(c.duration === total && meta.tm_duration === total, 'Timeline or metadata duration mismatch');
+    check(c.canvas_config.width === plan.W && c.canvas_config.height === plan.H && c.fps === plan.fps, 'Canvas or FPS mismatch');
+    check(meta.draft_fold_path === slash(publishedFolder), 'Draft metadata folder mismatch');
+    const tracks = c.tracks.filter(t => t.type === 'video'), aud = c.tracks.filter(t => t.type === 'audio');
+    check(tracks.length === 1, 'Expected exactly one editable video track');
+    check(c.tracks.length === 1 + (plan.voice.length ? 1 : 0), 'Unexpected tracks');
+    const videos = tracks.flatMap(t => t.segments), audio = aud.flatMap(t => t.segments);
+    check(videos.length === plan.images.length, 'Video segment count mismatch');
+    check(audio.length === plan.voice.length, 'Audio segment count mismatch');
+    const all = new Map(Object.values(c.materials).flat().map(m => [m.id, m]));
+    const speeds = new Map(c.materials.speeds.map(m => [m.id, m]));
+    function segmentCheck(s, p, kind, index) {
+      if (!s || !p) return;
+      const label = kind + ' ' + (index + 1);
+      const isVideo = kind === 'video', speed = isVideo ? p.speed : 1;
+      const m = (isVideo ? c.materials.videos : c.materials.audios).find(m => m.id === s.material_id);
+      check(!!m, label + ': wrong or missing material type');
+      check(s.target_timerange.start === us(p.start) && s.target_timerange.duration === us(p.dur), label + ': target timing mismatch');
+      check(s.source_timerange.start === us(p.trimStart) && s.source_timerange.duration === us(p.dur * speed), label + ': source timing mismatch');
+      check(s.speed === speed, label + ': segment speed mismatch');
+      check(s.volume === (isVideo ? 0 : p.volume), label + ': volume mismatch');
+      const refs = s.extra_material_refs || [];
+      check(refs.every(id => all.has(id)), label + ': missing material reference');
+      const speedRefs = refs.filter(id => speeds.has(id));
+      check(speedRefs.length === 1 && speeds.get(speedRefs[0]).speed === speed, label + ': speed material mismatch');
+      if (m) {
+        const expected = files[p.file];
+        check(!!expected && m.path === slash(expected), label + ': media path mismatch');
+        check(s.source_timerange.start + s.source_timerange.duration <= m.duration, label + ': source exceeds material');
+        if (expected) {
+          const relative = path.relative(publishedFolder, expected);
+          const safe = !relative.startsWith('..') && !path.isAbsolute(relative);
+          check(safe && fs.existsSync(path.join(folder, relative)) && fs.statSync(path.join(folder, relative)).isFile(), label + ': copied media missing or outside draft');
+        }
+      }
+    }
+    videos.forEach((s, i) => segmentCheck(s, plan.images[i], 'video', i));
+    audio.forEach((s, i) => segmentCheck(s, plan.voice[i], 'audio', i));
+  } catch (e) { issues.push('Cannot verify draft: ' + e.message); }
+  return issues;
+}
+
 // ---------------------------------------------------------------- fallback: ordered media folder + SRT (opens in any editor, CapCut included)
 const srtTime = s => { const ms = Math.round(s * 1000), h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), sec = Math.floor(ms % 60000 / 1000); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`; };
 function toSrt(list) { return list.map((t, i) => `${i + 1}\n${srtTime(t.start)} --> ${srtTime(t.end)}\n${String(t.text).trim()}\n`).join('\n'); }
@@ -406,5 +502,5 @@ function writeFolder({ plan, dest }) {
   return { folder: root, images: plan.images.length, srt: plan.captions.length > 0 };
 }
 
-module.exports = { detect, compat, isRunning, launch, makePlan, motionOf, buildContent, writeProject, verifyProject, writeFolder, toSrt, capSize, us, uniqueFolder, safeName, capcutRoot };
+module.exports = { detect, compat, isRunning, launch, makePlan, motionOf, buildContent, writeProject, verifyProject, verifyStrictProject, writeFolder, toSrt, capSize, us, uniqueFolder, safeName, capcutRoot };
 
