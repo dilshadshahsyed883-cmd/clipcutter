@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from .contracts import JobRequest
 
 KINDS={"extractor","analyzer"}
+TRANSITIONS={"awaiting_input":{"staging","failed"},"staging":{"ready","failed","cancelled"},"ready":{"processing","cancelled","failed"},"processing":{"delivering","failed","cancelled"},"delivering":{"failed"}}
 
 def safe_dir(path):
     path.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -118,3 +119,54 @@ class Store:
         if p.resolve()!=p or not p.is_file() or p.stat().st_nlink!=1 or p.stat().st_size!=rows[0]["size"]:
             raise HTTPException(404,"Verified output unavailable")
         return p,rows[0]
+
+    def transition(self,jid,expected,state,message,progress=None):
+        """Internal trusted intake/worker adapter only; never exposed as a browser route."""
+        import math
+        if state not in TRANSITIONS.get(expected,set()):
+            raise ValueError("Illegal request transition")
+        if progress is not None and (not isinstance(progress,(int,float)) or isinstance(progress,bool) or not math.isfinite(progress) or not 0<=progress<=100):
+            raise ValueError("Invalid progress")
+        if not isinstance(message,str) or len(message)>1000:
+            raise ValueError("Invalid status message")
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=self.row(c,jid)
+            if row["state"]!=expected: raise HTTPException(409,"Stale request state")
+            c.execute("UPDATE requests SET state=?,message=?,progress=?,updated_at=? WHERE id=? AND owner=?",
+                (state,message,progress,int(time.time()),jid,self.owner))
+            return self.public(self.row(c,jid))
+
+    def publish_verified_outputs(self,jid,artifacts):
+        """Internal receiver boundary. Caller must verify media format and keep files immutable.
+        Hash and size are independently checked here. No browser can invoke this.
+        """
+        if not isinstance(artifacts,list) or not 1<=len(artifacts)<=1000:
+            raise ValueError("Invalid output manifest")
+        with self.connect() as c:
+            if self.row(c,jid)["state"]!="delivering":
+                raise HTTPException(409,"Request not delivering")
+        records=[]
+        names=set()
+        for item in artifacts:
+            name=item["name"]; size=item["size"]; digest=item["sha256"]; media=item["media_type"]
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",name) or name in names:
+                raise ValueError("Invalid output filename")
+            if media not in {"video/mp4","application/json","application/zip","text/csv"} or type(size) is not int or size<=0 or not re.fullmatch(r"[a-f0-9]{64}",digest):
+                raise ValueError("Invalid output metadata")
+            p=self.root/"outputs"/jid/name
+            if p.resolve()!=p or not p.is_file() or p.stat().st_nlink!=1 or p.stat().st_size!=size:
+                raise ValueError("Output missing or size mismatch")
+            sha=hashlib.sha256()
+            with p.open("rb") as f:
+                for chunk in iter(lambda:f.read(1024*1024),b""): sha.update(chunk)
+            if sha.hexdigest()!=digest:
+                raise ValueError("Output digest mismatch")
+            names.add(name);records.append((jid,name,size,digest,media))
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            if self.row(c,jid)["state"]!="delivering":
+                raise HTTPException(409,"Stale delivery state")
+            c.executemany("INSERT INTO outputs VALUES (?,?,?,?,?)",records)
+            c.execute("UPDATE requests SET state='completed',progress=100,message='Verified outputs received',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
+            return self.public(self.row(c,jid))
