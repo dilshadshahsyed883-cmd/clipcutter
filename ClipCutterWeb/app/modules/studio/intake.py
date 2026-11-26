@@ -134,13 +134,13 @@ def verify_format(path, kind, suffix):
         raise RuntimeError("Input file format does not match selected type")
 
 def retry(fn):
-    for attempt in range(5):
+    for attempt in range(6):
         try:
             return fn()
         except Retryable:
-            if attempt==4:
+            if attempt==5:
                 raise
-            time.sleep(20)
+            time.sleep(40)
 
 def stage(store, jid, bridge=None):
     """Durable queue intake; the per-job lock guards restart and duplicate delivery."""
