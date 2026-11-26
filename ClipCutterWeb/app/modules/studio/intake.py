@@ -143,8 +143,7 @@ def retry(fn):
             time.sleep(20)
 
 def stage(store, jid, bridge=None):
-    """Explicit background intake. Lock prevents concurrent/restarted requests
-    from mutating the same job; a manual retry recovers interrupted staging."""
+    """Durable queue intake; the per-job lock guards restart and duplicate delivery."""
     bridge=bridge or Bridge()
     locks=safe_dir(store.root/"intake-locks")
     lockpath=locks/(jid+".lock")
@@ -157,6 +156,8 @@ def stage(store, jid, bridge=None):
         except BlockingIOError:
             return
         with store.admission():
+            from .scheduler import Control
+            if Control(store).snapshot()["paused"]:return
             job=store.get(jid)
             if job["state"] not in ("awaiting_input","staging","failed"):
                 return
@@ -192,8 +193,8 @@ def stage(store, jid, bridge=None):
                     part.unlink(missing_ok=True)
                     return bridge.request("download",{"row":row,"kind":k},part,k,JOB_LIMIT-total)
                 if k=="youtube":
-                    store.intake_progress(jid,0,"Downloading YouTube video (1080p maximum, no audio)")
-                    meta=youtube.download(store,job["input"]["source"],part,JOB_LIMIT-total)
+                    store.intake_progress(jid,None,"Downloading YouTube video (1080p maximum, no audio)")
+                    meta=youtube.download(store,job["input"]["source"],part,JOB_LIMIT-total,progress=lambda size:store.intake_progress(jid,None,f"Downloading YouTube video · {size/1024**2:.1f} MiB received"))
                 else:
                     meta=retry(download)
                 suffix=Path(meta["name"]).suffix.lower()
@@ -225,7 +226,7 @@ def stage(store, jid, bridge=None):
                 from .batch import expand
                 expand(store,jid,final,manifest)
             else:
-                store.transition(jid,"staging","ready",("YouTube inputs verified; GPU dispatch not supported yet" if is_youtube else "Drive inputs verified"),100)
+                store.transition(jid,"staging","ready",("YouTube inputs verified; waiting for GPU eligibility" if is_youtube else "Drive inputs verified; waiting for GPU"),100)
             from .uploads import discard_uploads
             discard_uploads(store,jid)
         except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException,NotImplementedError,EOFError,zlib.error) as exc:

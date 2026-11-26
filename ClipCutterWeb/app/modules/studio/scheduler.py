@@ -6,12 +6,10 @@ One root-configured owner, one approved group, one worker. No implicit deploymen
 import fcntl
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from .store import Store,safe_dir
 from .gpu import GPUStore,group_path
 from .dispatch import Dispatcher,WorkerClient,DispatchError
 from .lifecycle import Lifecycle,SaladAPI,LifecycleError
-from .intake import stage
 
 def authorized(store,cfg=None):
     return (os.environ.get("CLIPCUTTER_SCHEDULER_ENABLED")=="1" and
@@ -35,6 +33,14 @@ class Control:
         row["paused"]=bool(row["paused"])
         row["online"]=0<=time.time()-row["heartbeat"]<90
         return row
+    def set_paused(self,paused):
+        """Owner queue control, independent of paid GPU authorization."""
+        with self.store.admission(),self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=c.execute("SELECT action FROM scheduler_control WHERE id=1").fetchone()
+            if not paused and row["action"]=="stop":raise LifecycleError("Stop confirmation pending")
+            c.execute("UPDATE scheduler_control SET paused=?,action=CASE WHEN ?=1 AND action='start' THEN NULL ELSE action END WHERE id=1",(int(paused),int(paused)))
+        return self.snapshot()
     def command(self,action,cfg):
         if not authorized(self.store,cfg):raise LifecycleError("Scheduler activation gate closed")
         with self.store.admission(),self.store.connect() as c:
@@ -63,12 +69,12 @@ class Control:
             if clear:c.execute("UPDATE scheduler_control SET action=NULL WHERE id=1 AND action=?",(clear,))
 
 class Scheduler:
-    def __init__(self,store,api,worker,cfg,*,intake_fn=stage):
+    def __init__(self,store,api,worker,cfg):
         self.store=store;self.cfg=cfg;self.api=api;self.worker=worker
         self.dispatch=Dispatcher(store,worker);self.lifecycle=Lifecycle(store,cfg,api,worker)
-        self.control=Control(store);self.pool=ThreadPoolExecutor(max_workers=1);self.intake_fn=intake_fn;self.future=None
+        self.control=Control(store)
     def close(self):
-        self.pool.shutdown(wait=True)
+        pass  # VPS intake is owned by the independent web-process queue.
     def _jobs(self):
         with self.store.connect() as c:
             return [dict(x) for x in c.execute("""SELECT r.id,r.state,r.payload,a.phase FROM requests r
@@ -83,14 +89,6 @@ class Scheduler:
     def tick(self):
         with self.store.admission():
             rows=self._jobs()
-            if self.future is not None and self.future.done():
-                try:self.future.result()
-                except Exception:
-                    self.control.mark("intake_error")
-                self.future=None
-            if self.future is None:
-                pending=next((x for x in rows if x["state"] in ("awaiting_input","staging")),None)
-                if pending:self.future=self.pool.submit(self.intake_fn,self.store,pending["id"])
             # Record unsupported jobs explicitly, retain verified inputs.
             for row in rows:
                 if row["state"]=="ready" and not row["phase"] and not self.eligible(row):

@@ -58,7 +58,7 @@
 </form>
 </section>
 <section class="content-card studio-card" id="studio-queue" data-panel="queue" hidden>
-<div class="studio-heading"><h2>Request queue</h2><button id="refresh-requests" class="studio-secondary" type="button">Refresh</button></div>
+<div class="studio-heading"><h2>Request queue</h2><div class="studio-actions"><span id="queue-status" role="status" class="studio-status-chip">Checking…</span><button id="queue-pause" class="studio-secondary" type="button" disabled>Pause Queue</button><button id="queue-resume" type="button" disabled>Resume Queue</button></div></div>
 
 <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
 </section>
@@ -71,4 +71,4 @@
 <h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2><label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-input-row-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-auto-intake-1"></script>

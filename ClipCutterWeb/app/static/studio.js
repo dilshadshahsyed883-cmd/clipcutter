@@ -165,7 +165,7 @@
  }
  async function refresh(){
    if(refreshing||document.hidden)return;refreshing=true;
-   try{const data=await api("/requests?kind="+kind),rows=$("request-rows");rows.replaceChildren();
+   try{const data=await api("/requests?kind="+kind),rows=$("request-rows");rows.replaceChildren();queueState(data.paused);
      const picker=$("result-request"), prior=picker.value;picker.replaceChildren(new Option("Select a request",""));for(const job of data.requests.filter(j=>j.state==="completed"))picker.add(new Option(job.id.slice(0,8),job.id));if([...picker.options].some(o=>o.value===prior))picker.value=prior;
      if(!data.requests.length){const tr=document.createElement("tr"),td=put("td","No requests yet.");td.colSpan=5;tr.append(td);rows.append(tr);}
      for(const job of data.requests){const tr=document.createElement("tr");
@@ -173,13 +173,16 @@
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
-       if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:"))))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
+       if(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:")))actions.append(button("Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(["awaiting_input","ready","failed","cancelled","completed"].includes(job.state))actions.append(button("Delete",async()=>{if(!confirm("Delete this request from the queue? Active GPU attempts cannot be deleted."))return;try{await api("/requests/"+job.id,"DELETE");if(selected===job.id){selected=null;++seq;$("person-results").replaceChildren();$( "output-list").replaceChildren();$("output-preview").pause();$("output-preview").removeAttribute("src");$("output-preview").load();$("output-preview").hidden=true;$("output-status").textContent="Request deleted.";}await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
        tr.append(actions);rows.append(tr);}
    }catch(err){status.textContent="Refresh failed: "+err.message;}finally{refreshing=false;}
  }
- $("refresh-requests").onclick=refresh;
+ let queueBusy=false;
+ function queueState(paused){$("queue-status").textContent=paused?"Paused":"Active";$("queue-pause").disabled=queueBusy||paused;$("queue-resume").disabled=queueBusy||!paused;}
+ async function queueCommand(action){if(queueBusy)return;queueBusy=true;$("queue-pause").disabled=$("queue-resume").disabled=true;try{const data=await api("/queue/"+action,"POST");queueBusy=false;queueState(data.paused);status.textContent=data.paused?"Queue paused; active work may finish.":"Queue resumed";}catch(err){status.textContent=err.message;}finally{queueBusy=false;await refresh();}}
+ $("queue-pause").onclick=()=>queueCommand("pause");$("queue-resume").onclick=()=>queueCommand("resume");
  setView("new");
  refresh();const timer=setInterval(refresh,10000);window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
 })();

@@ -9,4 +9,9 @@ if __name__ == "__main__":
     port = int(os.environ["CLIPCUTTER_WEB_PORT"])
     if port < 1024 or port > 65535 or port == 18873:
         raise SystemExit("Invalid unprivileged port")
-    uvicorn.run("app.main:app", host=host, port=port, reload=False)
+    from app.modules.studio.auto_intake import start
+    stop=start()
+    try:
+        uvicorn.run("app.main:app", host=host, port=port, reload=False)
+    finally:
+        stop.set()
