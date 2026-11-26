@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.spec
+*.onnx
+*.part
+*.mp4
+*.mkv
+*.mov
+*.sqlite
+*.enc
+Clipivo_V2/_internal/Projects/
