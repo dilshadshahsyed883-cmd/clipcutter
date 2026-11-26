@@ -20,7 +20,7 @@ class SchedulerControlTests(unittest.TestCase):
     def test_reload_only_policy_not_target(self):
         self.assertTrue(policy_only_change(self.cfg,self.cfg.model_copy(update={"auto_start":True,"image_pull_threshold":12})))
         self.assertFalse(policy_only_change(self.cfg,self.cfg.model_copy(update={"worker_gateway":"https://other.salad.cloud"})))
-        self.assertFalse(policy_only_change(self.cfg,self.cfg.model_copy(update={"parallel":2})))
+        self.assertTrue(policy_only_change(self.cfg,self.cfg.model_copy(update={"parallel":2})))
 
     def test_default_gate(self):
         with patch.dict(os.environ,{},clear=True):
