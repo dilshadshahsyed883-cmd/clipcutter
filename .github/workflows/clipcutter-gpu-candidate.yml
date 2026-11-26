@@ -1,16 +1,7 @@
 name: ClipCutter GPU candidate
 
+# Build hold: manual dispatch only. Job disabled until owner-approved finalization.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'ClipCutterGPU/**'
-      - '.github/workflows/clipcutter-gpu-candidate.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'ClipCutterGPU/**'
-      - '.github/workflows/clipcutter-gpu-candidate.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,29 +12,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  pr-smoke:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Build and verify pull request (no publication)
-        id: build
-        shell: bash
-        run: bash ClipCutterGPU/build-candidate.sh "$GITHUB_SHA"
-      - name: Save image validation report
-        if: always() && steps.build.outputs.report != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: ClipCutter-GPU-PR-smoke
-          path: ${{ steps.build.outputs.report }}
-          if-no-files-found: error
   candidate:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Deliberately disabled. Finalization and authorized model supply must be approved first.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:

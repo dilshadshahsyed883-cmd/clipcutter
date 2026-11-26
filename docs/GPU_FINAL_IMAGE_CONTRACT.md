@@ -1,6 +1,6 @@
 # Owner-approved final GPU image contract — 26 November 2026
 
-BUILD HOLD: No GPU Docker build, workflow dispatch, GPU-path PR (existing PR CI builds), merge of GPU paths or publishing until owner explicitly approves the completed finalization. No EXE build ever. Do not start Salad or deploy. Stage source changes in a private feature branch without opening a PR. Existing published image is an incomplete candidate, not final.
+BUILD HOLD: No GPU Docker build, workflow dispatch or publishing until owner explicitly approves completed finalization. GPU workflow is manual-only with the build job disabled. Independently maintain GPU source in ClipCutterGPU/ and Web source in ClipCutterWeb/ on main; source review/merge is not a build authorization. No EXE build ever. Do not start Salad or deploy. Existing published image is an incomplete candidate, not final.
 
 ## Self-contained worker
 - Include the exact existing PC SCRFD detector and ArcFace recognizer, CUDA/ONNX Runtime, FFmpeg, extractor, analyzer and private job API. Model files must be inside the image at /models, not downloaded or installed on startup. No runtime dependency installation.

@@ -44,4 +44,4 @@ The owner's latest instruction supersedes the earlier ZIP destination rule: **th
 
 ## Owner-approved GPU build hold (latest instruction)
 
-No GPU Docker build or trigger until owner explicitly approves finalization. No GPU-path PR/merge while automated build triggers remain enabled; stage changes on a separate branch without PR. Follow docs/GPU_FINAL_IMAGE_CONTRACT.md. This hold supersedes general permission to build GPU candidates, without changing the permanent no-EXE rule.
+No GPU Docker build or trigger until owner explicitly approves finalization. GPU workflow is manual-only with its build job disabled during the hold. GPU source belongs in ClipCutterGPU/ on main; Web source belongs in ClipCutterWeb/ on main. Source changes may be reviewed and merged independently without building. Do not enable build until owner approval. Follow docs/GPU_FINAL_IMAGE_CONTRACT.md. This hold supersedes general permission to build GPU candidates, without changing the permanent no-EXE rule.
