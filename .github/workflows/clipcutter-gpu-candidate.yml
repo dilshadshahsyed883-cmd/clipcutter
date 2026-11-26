@@ -3,6 +3,11 @@ name: ClipCutter GPU candidate
 # Build hold: manual dispatch only. Job disabled until owner-approved finalization.
 on:
   workflow_dispatch:
+    inputs:
+      model_drive_id:
+        description: Owner-supplied public Drive model ZIP file ID (optional with model URL secret)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -24,6 +29,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install model transfer dependency
+        run: python3 -m pip install --disable-pip-version-check gdown==5.2.0
+      - name: Stage and verify privately supplied models
+        env:
+          CLIPCUTTER_MODEL_DRIVE_ID: ${{ inputs.model_drive_id }}
+          CLIPCUTTER_MODEL_ZIP_URL: ${{ secrets.CLIPCUTTER_MODEL_ZIP_URL }}
+        run: python3 ClipCutterGPU/prepare-models.py
       - name: Build and verify exact candidate
         id: build
         shell: bash
@@ -76,3 +88,6 @@ jobs:
           name: ClipCutter-GPU-image-reference
           path: ${{ steps.build.outputs.report }}
           if-no-files-found: error
+      - name: Remove temporary model files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/clipcutter-authorized-models"
