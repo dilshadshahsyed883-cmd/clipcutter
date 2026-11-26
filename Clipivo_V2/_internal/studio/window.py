@@ -35,6 +35,7 @@ class SettingsPage(QWidget):
         found=find_models(self.models.text()) or find_face_models()
         if found:self.models.setText(str(found))
     def save(self):
+        if self.window.analyzer_page.busy:return QMessageBox.warning(self,'Settings','Wait for person analysis to finish before changing models.')
         if self.clip_min.value()>self.clip_max.value():return QMessageBox.warning(self,'Clip limits','Minimum cannot exceed maximum.')
         save_settings({'clip_limits':dict(enabled=self.limits_on.isChecked(),minimum=self.clip_min.value(),maximum=self.clip_max.value())})
         save_settings(dict(capcut_drafts=self.capcut_drafts.text(),models=self.models.text(),custom_models=self.custom.isChecked(),gpu=self.gpu.isChecked(),step=self.step.value(),threshold=self.threshold.value(),size=int(self.size.currentText())))
@@ -106,11 +107,12 @@ class StudioWindow(MainWindow):
         self.timeline.update()
     def _video_job_running(self):
         upstream=super()._video_job_running()
-        return upstream or (getattr(self,'studio_ready',False) and (self.analyzer_page.task.busy or self.replacement_page.task.busy))
+        return upstream or (getattr(self,'studio_ready',False) and (self.analyzer_page.busy or self.replacement_page.task.busy))
     def closeEvent(self,event):
         if getattr(self,'studio_ready',False):
             tasks=[self.analyzer_page.task,self.replacement_page.task]
-            if any(t.busy for t in tasks):
+            if self.analyzer_page.busy or any(t.busy for t in tasks):
+                self.analyzer_page.cancel_analysis()
                 for t in tasks:t.cancel()
                 event.ignore();self.statusBar().showMessage('Cancelling active work; close again when it finishes.');return
             self.analyzer_page.shutdown()
