@@ -14,6 +14,8 @@ import subprocess
 import tempfile
 import time
 from urllib.parse import urlsplit
+import fcntl
+from .store import safe_dir
 
 RCLONE=Path("/usr/bin/rclone")
 MAX_JSON=2*1024**2
@@ -97,6 +99,13 @@ def verify_remote(folder,name,item,md5):
     return True
 
 def deliver_one(store,jid,folder,dest,items):
+    locks=safe_dir(store.root/"orchestration-locks")
+    with os.fdopen(os.open(locks/"drive-delivery.lock",os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise DeliveryError("Another Drive delivery is active") from None
+        return _deliver_one(store,jid,folder,dest,items)
+
+def _deliver_one(store,jid,folder,dest,items):
     settings(folder)
     with store.connect() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS drive_delivery (

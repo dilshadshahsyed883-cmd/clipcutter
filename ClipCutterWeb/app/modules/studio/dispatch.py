@@ -4,6 +4,7 @@ Call tick from a single trusted scheduler after deployment/worker approval.
 Never recreate a lost attempt automatically; the VPS keeps verified inputs.
 """
 import fcntl
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -91,12 +92,30 @@ class WorkerClient:
 class Dispatcher:
     def __init__(self,store,client):
         self.store=store;self.client=client
+        self.delivery_pool=None;self.delivery_future=None;self.delivery_job=None
         with store.connect() as c:
             c.execute("""CREATE TABLE IF NOT EXISTS gpu_attempts(
               job_id TEXT PRIMARY KEY REFERENCES requests(id), attempt_id TEXT UNIQUE NOT NULL,
               manifest TEXT NOT NULL, mapping TEXT NOT NULL, phase TEXT NOT NULL,
               worker_sha TEXT NOT NULL, gateway TEXT NOT NULL, result_sha TEXT,
               review_json TEXT)""")
+    def close(self):
+        if self.delivery_pool:self.delivery_pool.shutdown(wait=True)
+
+    def drive_delivery_tick(self,jid,folder,dest,items):
+        # Large network writes cannot hold the owner admission lock or block queue
+        # controls. The durable intent is committed by the one delivery thread.
+        if self.delivery_future is not None:
+            if self.delivery_job!=jid:raise DeliveryError("Another Drive receipt is pending")
+            if not self.delivery_future.done():return False
+            future=self.delivery_future
+            self.delivery_future=None;self.delivery_job=None
+            return future.result()
+        if self.delivery_pool is None:self.delivery_pool=ThreadPoolExecutor(max_workers=1)
+        self.delivery_job=jid
+        self.delivery_future=self.delivery_pool.submit(deliver_one,self.store,jid,folder,dest,items)
+        return False
+
     def _row(self,jid):
         with self.store.connect() as c:
             self.store.row(c,jid)
@@ -285,7 +304,7 @@ class Dispatcher:
             try:
                 # Upload at most one artifact per tick. An ambiguous write is
                 # reconciled by metadata only; never repeat an uncertain POST.
-                if not deliver_one(self.store,jid,folder,dest,items):return "delivering_drive"
+                if not self.drive_delivery_tick(jid,folder,dest,items):return "delivering_drive"
             except DeliveryError as exc:
                 with self.store.connect() as c:
                     c.execute("UPDATE requests SET message=?,updated_at=? WHERE id=? AND owner=? AND state='delivering'",("Drive delivery held: "+str(exc)[:300],int(time.time()),jid,self.store.owner))

@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
 from unittest.mock import patch
 from app.modules.studio.contracts import JobRequest
@@ -101,6 +102,21 @@ class DispatchTests(unittest.TestCase):
             with patch.object(self.client,"capabilities",return_value={"active_renders":0,"source_kinds":["video","youtube"]}):
                 self.assertEqual(self.dispatch.tick(self.jid),"staging")
                 self.assertEqual(self.dispatch.tick(self.jid),"running")
+    def test_drive_delivery_runs_without_blocking_scheduler(self):
+        entered=Event();release=Event()
+        def deliver(*args):
+            entered.set();release.wait(3);return True
+        try:
+            with patch("app.modules.studio.dispatch.deliver_one",side_effect=deliver) as mocked:
+                self.assertFalse(self.dispatch.drive_delivery_tick(self.jid,"folder",None,[]))
+                self.assertTrue(entered.wait(2))
+                self.assertFalse(self.dispatch.drive_delivery_tick(self.jid,"folder",None,[]))
+                self.assertEqual(mocked.call_count,1)
+                release.set()
+                self.dispatch.delivery_future.result(timeout=2)
+                self.assertTrue(self.dispatch.drive_delivery_tick(self.jid,"folder",None,[]))
+        finally:
+            release.set();self.dispatch.close()
     def test_worker_origin_rejects_untrusted(self):
         with self.assertRaises(DispatchError):WorkerClient("https://example.org","x"*32,"y"*32,"1"*40,approved_gateway="https://example.org")
         with self.assertRaises(DispatchError):WorkerClient("https://a.salad.cloud","x"*32,"y"*32,"1"*40,approved_gateway="https://b.salad.cloud")

@@ -76,7 +76,7 @@ class Scheduler:
         self.dispatch=Dispatcher(store,worker);self.lifecycle=Lifecycle(store,cfg,api,worker)
         self.control=Control(store)
     def close(self):
-        pass  # VPS intake is owned by the independent web-process queue.
+        self.dispatch.close()  # VPS intake is owned by the independent web-process queue.
     def _jobs(self):
         with self.store.connect() as c:
             return [dict(x) for x in c.execute("""SELECT r.id,r.state,r.payload,a.phase FROM requests r
