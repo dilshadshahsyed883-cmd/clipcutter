@@ -163,3 +163,80 @@ def test_late_preview_cannot_overwrite_completed_project():
                          folder=Path('completed'),data=completed)
     AnalyzerPage.poll(fake)
     assert fake.data is completed and q.empty()
+
+
+def test_spatial_tiebreaker_stabilizes_ambiguous_recent_groups():
+    groups=[dict(_sum=np.array([1.,0.]),observations=[dict(time=1,box_norm=[0,0,.3,.3])]),
+            dict(_sum=np.array([.999,.02]),observations=[dict(time=1,box_norm=[.7,.7,1,1])])]
+    idx=assign(groups,np.array([1.,0.]),set(),.45,box=[.01,.01,.31,.31],timestamp=1.5,step=.5)
+    assert idx==0 and len(groups)==2
+    assert groups[idx]['identity_status']=='uncertain'
+    idx=assign(groups,np.array([1.,0.]),set(),.45,box=[.01,.01,.31,.31],timestamp=10,step=.5)
+    assert idx==2
+
+
+def test_failed_staged_save_preserves_previous_analysis(monkeypatch,tmp_path):
+    data=dict(version=2,duration=5,sample_interval=.5,people=[group('1',1)])
+    save_project(tmp_path,data)
+    prior=(tmp_path/'analysis.json').read_bytes()
+    data['people'][0]['name']='changed'
+    original=Path.write_text
+    def fail_txt(path,*a,**kw):
+        if path.name.startswith('timeline.txt.'):raise OSError('simulated disk write failure')
+        return original(path,*a,**kw)
+    monkeypatch.setattr(Path,'write_text',fail_txt)
+    with pytest.raises(OSError):save_project(tmp_path,data)
+    assert (tmp_path/'analysis.json').read_bytes()==prior
+    assert not list(tmp_path.glob('*.tmp'))
+
+
+def test_import_v22_non_destructive_and_idempotent(monkeypatch,tmp_path):
+    from core.character_store import CharacterStore
+    import json
+    monkeypatch.setenv('CLIPIVO_STUDIO_DATA',str(tmp_path))
+    store=CharacterStore(tmp_path/'people',encryption_key=b'k'*32)
+    legacy=tmp_path/'People_Library'/'legacy-id';legacy.mkdir(parents=True)
+    source=legacy/'profile.json';source.write_text(json.dumps(dict(name='Legacy',embeddings=[[9,9]])))
+    image=legacy/'face.jpg';image.write_bytes(b'fixture')
+    before=source.read_bytes()
+    profiles=Profiles(store)
+    imported,skipped=profiles.import_v22(legacy.parent)
+    assert len(imported)==1 and not skipped
+    assert store.character(imported[0]).name=='Legacy'
+    assert profiles.entries('new-model')==[]
+    assert profiles.import_v22(legacy.parent)[0]==[]
+    assert source.read_bytes()==before and image.read_bytes()==b'fixture'
+
+
+def test_fixture_download_checksum_and_retry(monkeypatch,tmp_path):
+    payload=b'valid model fixture';spec={'det_10g.onnx':(len(payload),hashlib.sha256(payload).hexdigest())}
+    monkeypatch.setattr('v22.model_locator.MODEL_FILES',spec)
+    transport=Mock(side_effect=[io.BytesIO(b'bad'),io.BytesIO(payload)])
+    monkeypatch.setattr('urllib.request.urlopen',transport)
+    with pytest.raises(RuntimeError):download_models(tmp_path)
+    assert not list(tmp_path.glob('*.part'))
+    download_models(tmp_path)
+    assert (tmp_path/'det_10g.onnx').read_bytes()==payload
+    download_models(tmp_path)
+    assert transport.call_count==2
+
+
+def test_real_video_decode_with_mock_inference(tmp_path):
+    # Real OpenCV video IO; no real biometric model or GPU.
+    source=tmp_path/'fixture.avi'
+    writer=cv2.VideoWriter(str(source),cv2.VideoWriter_fourcc(*'MJPG'),10,(64,64))
+    if not writer.isOpened():pytest.skip('MJPG encoder unavailable')
+    for i in range(20):writer.write(np.full((64,64,3),i,np.uint8))
+    writer.release()
+    before=source.read_bytes()
+    engine=Mock(device='mock-CPU',warning='')
+    engine.get.return_value=[(np.array([1.,0.]),np.zeros((40,40,3),np.uint8),10.,(5,5,45,45),.9)]
+    dest=tmp_path/'project'
+    data=run(source,dest,None,dict(step=.5,filters=dict(background=False,static=False)),
+             lambda *a:None,lambda:False,None,[],engine=engine)
+    assert data['decoded_frames']==20
+    assert data['analyzed_frames']==4==engine.get.call_count
+    assert len(data['people'])==1
+    assert data['duration']==pytest.approx(2,abs=.11)
+    assert (dest/'analysis.json').exists()
+    assert source.read_bytes()==before
