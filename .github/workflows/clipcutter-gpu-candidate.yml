@@ -1,9 +1,18 @@
 name: ClipCutter GPU candidate
 
-# Build hold: manual dispatch only. Job disabled until owner-approved finalization.
+# Owner-approved private educational build: manual dispatch and exact SHA only.
 on:
   workflow_dispatch:
     inputs:
+      approved_sha:
+        description: Reviewed exact current main commit SHA
+        type: string
+        required: true
+      private_educational_approved:
+        description: Owner approves this private educational build and assumes model licensing responsibility
+        type: boolean
+        required: true
+        default: false
       model_drive_id:
         description: Owner-supplied public Drive model ZIP file ID (optional with model URL secret)
         type: string
@@ -18,8 +27,8 @@ concurrency:
 
 jobs:
   candidate:
-    # Deliberately disabled. Finalization and authorized model supply must be approved first.
-    if: ${{ false }}
+    # Manual owner-directed educational exception; no assertion of third-party licensing rights.
+    if: github.ref == 'refs/heads/main' && inputs.approved_sha == github.sha && inputs.private_educational_approved
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
@@ -29,6 +38,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Verify private registry before model staging
+        env:
+          CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
+        run: python3 ClipCutterGPU/verify-private-package.py
       - name: Install model transfer dependency
         run: python3 -m pip install --disable-pip-version-check gdown==5.2.0
       - name: Stage and verify privately supplied models
@@ -41,6 +54,8 @@ jobs:
         shell: bash
         env:
           CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
+          CLIPCUTTER_FINAL_APPROVED_SHA: ${{ inputs.approved_sha }}
+          CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED: '1'
         run: |
           set -euo pipefail
           bash ClipCutterGPU/build-candidate.sh "$GITHUB_SHA"

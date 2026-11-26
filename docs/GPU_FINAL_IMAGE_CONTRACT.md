@@ -9,3 +9,16 @@ BUILD HOLD: No GPU Docker build, workflow dispatch or publishing until owner exp
 - Authenticated job submission, bounded concurrency 1/2 after testing, per-job cancellation, progress, actual errors, verified result manifest and safe transfer to VPS. No fake success. Worker processes jobs only; no Salad billing control or Drive credentials on worker.
 - Web owns Drive intake, durable queue, dispatch/retry, result receipt/verification, independent worker credentials, Salad group lifecycle. All pending input verification before startup or dispatch; keep inputs on VPS through disconnect; no duplicate dispatch. Concat rule parity per ClipCutterWeb/GPU_CONFIG_RULES.md (8%/20s adjustable, 3 reallocations then 5-minute cooldown, 60s idle stop only after work and deliveries finish).
 - Finalize model rights, secure build supply, transport contract, retention/deletion, queue and lifecycle, source tests and acceptance checklist before image build. Real GPU/media acceptance follows separate deployment approval. Report any incomplete component before implementation or build. Do not claim final readiness from CPU-only smoke.
+
+## Superseding owner-directed educational build exception
+
+Owner explicitly requested the model-inclusive private educational image build
+and assumes licensing responsibility. For this build, vendor written
+clarification is not a blocking prerequisite; no third-party packaging rights
+or commercial license are represented as verified. The manual workflow requires
+an exact approved current-main SHA and private educational confirmation. The
+builder uses `CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED=1` instead of representing
+redistribution rights as verified. Private package verification, pinned model
+hashes, all smoke gates, immutable tags and digest verification remain required.
+This supersedes historical build-disabled statements for this testing build.
+No Salad start, paid GPU usage, Concat changes, EXE or VPS deployment.

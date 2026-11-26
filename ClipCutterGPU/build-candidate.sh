@@ -5,8 +5,8 @@ set +x
 umask 077
 [[ "$#" == 1 && "$1" =~ ^[a-f0-9]{40}$ ]] || { echo "Usage: bash ClipCutterGPU/build-candidate.sh <approved-main-sha>" >&2; exit 1; }
 SHA="$1"
-# Owner must explicitly approve final SHA and lawful redistribution before this build.
-[[ "${CLIPCUTTER_FINAL_APPROVED_SHA:-}" == "$SHA" && "${CLIPCUTTER_MODEL_REDISTRIBUTION_AUTHORIZED:-}" == 1 ]] || { echo "Final build and model rights approval required" >&2; exit 1; }
+# Owner-directed private educational build. This approval is not a third-party license determination.
+[[ "${CLIPCUTTER_FINAL_APPROVED_SHA:-}" == "$SHA" && "${CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED:-}" == 1 ]] || { echo "Exact final SHA and owner private educational approval required" >&2; exit 1; }
 [[ -n "${CLIPCUTTER_AUTHORIZED_MODEL_DIR:-}" ]] || { echo "Authorized local model directory required" >&2; exit 1; }
 # Do not even build licensed model layers until the dedicated package is verified private.
 python3 "$(dirname "$0")/verify-private-package.py"
