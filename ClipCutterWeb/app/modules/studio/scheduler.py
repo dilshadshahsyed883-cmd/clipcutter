@@ -160,7 +160,7 @@ class Scheduler:
                 delivery=next((x for x in active if x["phase"] in output_phases and available(x)),None)
                 launch("delivery",delivery)
             if pipeline or not self.flights:
-                observe=[x for x in rows if available(x) and (x["command"] or x["phase"] in observe_phases)]
+                observe=[x for x in rows if available(x) and (x["command"] or x["phase"] in observe_phases|{"failed","cancelled"})]
                 if observe:
                     commands=[x for x in observe if x["command"]]
                     candidates=commands or observe
