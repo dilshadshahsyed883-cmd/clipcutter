@@ -46,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
         if method=="GET" and path in ("/health","/health/ready"):return (200 if status["ready"] else 503),dict(status)
         self.authorize()
         if method=="GET" and path=="/api/capabilities":
-            return 200,{"source_sha":status["source_sha"],"contract_version":2,"kinds":["extractor","analyzer"],
+            return 200,{"source_sha":status["source_sha"],"contract_version":2,"kinds":["extractor","analyzer"],"source_kinds":["video","youtube"],
                 "ready":status["ready"],"dispatch_enabled":status["ready"],"transport":"verified-chunks-v1",
                 "chunk_bytes":CHUNK,**w.metrics()}
         m=re.fullmatch(r"/api/jobs/([a-f0-9]{32})(?:/(start|cancel|purge|input|output)(?:/([A-Za-z0-9_.-]{1,128}))?)?",path)

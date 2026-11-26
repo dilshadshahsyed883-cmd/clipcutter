@@ -50,6 +50,14 @@ class TransportTests(unittest.TestCase):
         self.assertFalse((self.root/self.a/"input").exists())
         self.assertEqual(self.w.start(self.a)["state"],"completed")
         self.assertEqual(self.w.metrics()["undelivered"],0)
+    def test_youtube_staged_contract(self):
+        m=manifest()
+        m["job"]["request"]["input"]={"source_kind":"youtube","source":"https://www.youtube.com/watch?v=NMeVJDrpQO8"}
+        m["job"]["request"]["settings"]["include_audio"]=False
+        self.w.create(self.a,m)
+        self.w.put(self.a,"source.video",0,VIDEO,sha(VIDEO))
+        self.w.start(self.a)
+        self.assertEqual(self.wait_terminal()["state"],"completed")
     def test_conflict_partial_bad_hash(self):
         self.w.create(self.a,manifest())
         with self.assertRaises(ApiError):self.w.create(self.a,manifest(b"other"))

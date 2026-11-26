@@ -22,7 +22,7 @@
           <label>Download window (seconds)<input name="image_pull_seconds" type="number" min="5" max="600" step="1" required></label>
           <label>Maximum reallocations per cycle<input name="salad_max_reallocations" type="number" min="0" max="3" step="1" required></label>
           <label>Inter-attempt cooldown (seconds)<input name="salad_reallocate_cooldown" type="number" min="5" max="600" step="1" required></label>
-          <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2">2 (requires resource acceptance)</option></select></label>
+          <label>Parallel GPU jobs<select name="parallel"><option value="1">1</option><option value="2" disabled>2 (not supported by current worker)</option></select></label>
         </div>
         <details class="studio-advanced"><summary>Automation rules</summary><p id="gpu-rule" class="studio-note" aria-live="polite"></p><p class="studio-note">Auto-stop: 60 seconds after queue and verified deliveries finish.</p></details>
         <div class="studio-actions"><button type="submit" id="gpu-save">Save Automation Settings</button><span id="gpu-save-status" role="status"></span></div>
@@ -34,8 +34,8 @@
     <span class="studio-status-chip" id="gpu-capability" role="status">Loading…</span>
     <p id="gpu-status" role="status" class="studio-note">Status not checked.</p>
     <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Instance</th><th>State</th><th>Image pull</th><th>Salad ready</th><th>Updated</th></tr></thead><tbody id="gpu-instances"></tbody></table></div>
-    <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button></div>
+    <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button><span id="gpu-action-status" role="status" aria-live="polite"></span></div>
 
   </section>
 </div>
-<script defer src="/static/gpu.js?v=20261126-no-header-1"></script>
+<script defer src="/static/gpu.js?v=20261126-gpu-controls-2"></script>

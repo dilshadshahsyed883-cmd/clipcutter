@@ -13,6 +13,7 @@ from uuid import UUID
 import httpx
 from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent
 from .store import safe_dir
+from .eligibility import blocker
 
 class LifecycleError(RuntimeError):pass
 
@@ -74,15 +75,14 @@ class Lifecycle:
             eligible=0
             for x in rows:
                 if x["state"]!="ready":continue
-                p=json.loads(x["payload"]);s=p["settings"]
-                if p["input"]["source_kind"]=="video" and not p["input"].get("output_folder") and not(s["kind"]=="analyzer" and (s.get("reference_link") or s.get("reference_uploads"))):eligible+=1
+                if blocker(json.loads(x["payload"])) is None:eligible+=1
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
             unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new') LIMIT 1").fetchone())
         return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
             "busy":unresolved or any(s in ("processing","delivering") for s in states),
-            "empty":all(s in ("completed","failed","cancelled","review","batch_expanded") for s in states) and not unresolved}
+            "empty":not eligible and all(s in ("completed","failed","cancelled","deleted","review","batch_expanded","ready") for s in states) and not unresolved}
     def _post(self,r,action,i=None):
         self._save(r,action+"_requested")
         try:self.api.mutate(action,i)

@@ -88,6 +88,19 @@ class DispatchTests(unittest.TestCase):
         self.client.remote["result_sha256"]="0"*64
         with self.assertRaisesRegex(DispatchError,"Invalid result"):self.dispatch.tick(self.jid)
         self.assertEqual(self.client.purges,0)
+    def test_youtube_dispatch_requires_approved_capability(self):
+        with self.store.connect() as c:
+            p=json.loads(c.execute("SELECT payload FROM requests WHERE id=?",(self.jid,)).fetchone()[0])
+            p["input"].update(source_kind="youtube",source="https://www.youtube.com/watch?v=NMeVJDrpQO8")
+            c.execute("UPDATE requests SET payload=? WHERE id=?",(json.dumps(p),self.jid))
+        with patch.dict("os.environ",{"CLIPCUTTER_YOUTUBE_DISPATCH_ENABLED":"0"}):
+            with self.assertRaisesRegex(DispatchError,"YouTube"):self.dispatch.tick(self.jid)
+        with patch.dict("os.environ",{"CLIPCUTTER_YOUTUBE_DISPATCH_ENABLED":"1"}):
+            with self.assertRaisesRegex(DispatchError,"advertise YouTube"):self.dispatch.tick(self.jid)
+            self.assertEqual(self.client.creates,0)
+            with patch.object(self.client,"capabilities",return_value={"active_renders":0,"source_kinds":["video","youtube"]}):
+                self.assertEqual(self.dispatch.tick(self.jid),"staging")
+                self.assertEqual(self.dispatch.tick(self.jid),"running")
     def test_worker_origin_rejects_untrusted(self):
         with self.assertRaises(DispatchError):WorkerClient("https://example.org","x"*32,"y"*32,"1"*40,approved_gateway="https://example.org")
         with self.assertRaises(DispatchError):WorkerClient("https://a.salad.cloud","x"*32,"y"*32,"1"*40,approved_gateway="https://b.salad.cloud")

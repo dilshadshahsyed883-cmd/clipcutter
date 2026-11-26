@@ -22,9 +22,9 @@ def drive_link(value):
 
 class Input(Strict):
     source: str=Field(min_length=1,max_length=2048)
-    source_kind: Literal["video","zip","folder"]="video"
+    source_kind: Literal["video","zip","folder","youtube"]="video"
     output_folder: str | None=Field(default=None,max_length=2048)
-    @field_validator("source","output_folder")
+    @field_validator("output_folder")
     @classmethod
     def validate_link(cls,v):
         return drive_link(v) if v is not None else None
@@ -32,6 +32,12 @@ class Input(Strict):
     def kind(self):
         if self.output_folder and "/folders/" not in urlsplit(self.output_folder).path:
             raise ValueError("Output destination must be a Drive folder")
+        if self.source_kind=="youtube":
+            u=urlsplit(self.source)
+            if u.scheme!="https" or u.netloc!="www.youtube.com" or u.path!="/watch" or u.fragment or not re.fullmatch(r"v=[A-Za-z0-9_-]{11}",u.query):
+                raise ValueError("Expected canonical YouTube single-video URL")
+            return self
+        self.source=drive_link(self.source)
         if ("/folders/" in urlsplit(self.source).path)!=(self.source_kind=="folder"):
             raise ValueError("Source type must match the Drive file or folder link")
         return self
@@ -107,6 +113,8 @@ class JobRequest(Strict):
     def check(self):
         if self.settings.reference_link and self.settings.reference_uploads:
             raise ValueError("Choose Drive or uploaded references, not both")
-        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind!="video":
+        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind not in ("video","youtube"):
             raise ValueError("Manual ranges require a single video source")
+        if isinstance(self.settings,Extractor) and self.input.source_kind=="youtube" and self.settings.include_audio:
+            raise ValueError("YouTube staged input is video-only")
         return self

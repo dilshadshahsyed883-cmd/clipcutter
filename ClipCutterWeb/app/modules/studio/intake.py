@@ -226,7 +226,7 @@ def stage(store, jid, bridge=None):
                 from .batch import expand
                 expand(store,jid,final,manifest)
             else:
-                store.transition(jid,"staging","ready",("YouTube inputs verified; waiting for GPU eligibility" if is_youtube else "Drive inputs verified; waiting for GPU"),100)
+                store.transition(jid,"staging","ready",("YouTube inputs verified; waiting for GPU" if is_youtube else "Drive inputs verified; waiting for GPU"),100)
             from .uploads import discard_uploads
             discard_uploads(store,jid)
         except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException,NotImplementedError,EOFError,zlib.error) as exc:
