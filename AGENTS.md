@@ -18,3 +18,11 @@ Owner instruction recorded on 26 November 2026:
 ## Clip Extractor compatibility rule
 
 - Preserve original Clipivo v0.7.7 recognition, scan and extractor UI behavior, upstream verified model discovery and original dependency pins. Studio analyzer model settings must not override the extractor/Batch engine. Keep new optional clip-duration controls opt-in and verify parity with them disabled. Do not reset or delete existing user data to restore compatibility.
+
+## Windows source ZIP location rule
+
+- Store PC-testing source ZIPs under `%LOCALAPPDATA%\ClipivoV2\packages\`, never in Downloads by default.
+- Extract the runnable source app under `%LOCALAPPDATA%\ClipivoV2\app\Clipivo_V2\`, never into Downloads by default.
+- Preserve the archive name `Clipivo_V2_3_Windows.zip`, its single outer `Clipivo_V2` folder, `START_V2.bat` and `_internal` structure.
+- Keep the Python runtime under `%LOCALAPPDATA%\ClipivoV2\runtime\`; do not bundle it in the ZIP.
+- Follow `docs/PC_TEST_ZIP_METHOD.md`. Creating a requested source ZIP does not authorize an EXE build, packaging an executable, or adding a GitHub Actions build workflow.
