@@ -1,7 +1,22 @@
 name: ClipCutter GPU candidate
 
-# Owner-approved private educational build: manual dispatch and exact SHA only.
+# Owner-approved automatic private educational build; main events only.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'ClipCutterGPU/Dockerfile'
+      - 'ClipCutterGPU/.dockerignore'
+      - 'ClipCutterGPU/requirements.txt'
+      - 'ClipCutterGPU/worker/**'
+      - 'ClipCutterGPU/tests/**'
+      - 'ClipCutterGPU/build-candidate.sh'
+      - 'ClipCutterGPU/check-main-gpu-tree.sh'
+      - 'ClipCutterGPU/prepare-models.py'
+      - 'ClipCutterGPU/verify-private-package.py'
+      - 'ClipCutterGPU/prepare-seed-models.sh'
+      - '.github/workflows/clipcutter-gpu-candidate.yml'
+      - '.github/workflows/clipcutter-gpu-source-tests.yml'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -26,9 +41,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source-tests:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (inputs.approved_sha == github.sha && inputs.private_educational_approved))
+    uses: ./.github/workflows/clipcutter-gpu-source-tests.yml
+    permissions:
+      contents: read
   candidate:
-    # Manual owner-directed educational exception; no assertion of third-party licensing rights.
-    if: github.ref == 'refs/heads/main' && inputs.approved_sha == github.sha && inputs.private_educational_approved
+    needs: source-tests
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (inputs.approved_sha == github.sha && inputs.private_educational_approved))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
@@ -42,25 +62,47 @@ jobs:
         env:
           CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
         run: python3 ClipCutterGPU/verify-private-package.py
-      - name: Install model transfer dependency
-        run: python3 -m pip install --disable-pip-version-check gdown==5.2.0
-      - name: Stage and verify privately supplied models
+      - name: Check exact candidate tag before staging or building
+        shell: bash
         env:
-          CLIPCUTTER_MODEL_DRIVE_ID: ${{ inputs.model_drive_id }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:$GITHUB_SHA"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          if docker manifest inspect "$IMAGE" > /dev/null 2> "$RUNNER_TEMP/registry-check.txt"; then
+            echo 'Immutable candidate already exists; refusing duplicate build' >&2
+            exit 1
+          fi
+          grep -Eiq 'manifest unknown|name unknown|no such manifest|manifest.*not found' "$RUNNER_TEMP/registry-check.txt" || { cat "$RUNNER_TEMP/registry-check.txt" >&2; exit 1; }
+      - name: Stage and verify models from configured source or private seed
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
+          CLIPCUTTER_MODEL_DRIVE_ID: ${{ inputs.model_drive_id || secrets.CLIPCUTTER_MODEL_DRIVE_ID }}
           CLIPCUTTER_MODEL_ZIP_URL: ${{ secrets.CLIPCUTTER_MODEL_ZIP_URL }}
-        run: python3 ClipCutterGPU/prepare-models.py
+        run: |
+          set -euo pipefail
+          if [[ -n "$CLIPCUTTER_MODEL_DRIVE_ID" || -n "$CLIPCUTTER_MODEL_ZIP_URL" ]]; then
+            python3 -m pip install --disable-pip-version-check gdown==5.2.0
+            python3 ClipCutterGPU/prepare-models.py
+          else
+            bash ClipCutterGPU/prepare-seed-models.sh
+          fi
       - name: Build and verify exact candidate
         id: build
         shell: bash
         env:
           CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
-          CLIPCUTTER_FINAL_APPROVED_SHA: ${{ inputs.approved_sha }}
+          CLIPCUTTER_FINAL_APPROVED_SHA: ${{ github.sha }}
           CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED: '1'
         run: |
           set -euo pipefail
           bash ClipCutterGPU/build-candidate.sh "$GITHUB_SHA"
       - name: Publish validated immutable main candidate
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GHCR_TOKEN: ${{ github.token }}

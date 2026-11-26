@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual isolated Docker builder only. No VPS/Salad provisioning and no automatic push.
+# Isolated Docker builder. No VPS/Salad provisioning or direct registry push.
 set -Eeuo pipefail
 set +x
 umask 077
