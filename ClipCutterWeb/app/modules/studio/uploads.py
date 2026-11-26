@@ -28,7 +28,7 @@ def transfer(source,limit,target=None):
     if not size:raise HTTPException(422,"Empty reference image")
     return size,digest.hexdigest()
 
-def create_uploaded(store,payload,images):
+def create_uploaded(store,payload,images,identity=None):
     if not 1<=len(images)<=MAX_IMAGES:
         raise HTTPException(422,"Select 1–12 images")
     try:
@@ -54,7 +54,7 @@ def create_uploaded(store,payload,images):
         with store.connect() as c:
             previous=c.execute("SELECT id FROM requests WHERE request_id=? AND owner=?",(req.request_id,store.owner)).fetchone()
         if previous:
-            return store._create(req)
+            return store._create(req,identity)
         root=safe_dir(store.root/"reference-uploads")
         target=root/req.request_id
         if target.exists(): safe_dir(target);shutil.rmtree(target)
@@ -72,7 +72,7 @@ def create_uploaded(store,payload,images):
                 fd=os.open(d,os.O_RDONLY|os.O_DIRECTORY)
                 try:os.fsync(fd)
                 finally:os.close(fd)
-            return store._create(req)
+            return store._create(req,identity)
         except RuntimeError:
             shutil.rmtree(target)
             raise HTTPException(422,"Reference image format does not match its extension") from None

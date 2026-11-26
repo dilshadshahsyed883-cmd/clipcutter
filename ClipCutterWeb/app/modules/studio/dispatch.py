@@ -299,6 +299,8 @@ class Dispatcher:
                 if item["size"]>MAX_JSON:raise DispatchError("JSON output too large")
                 json.loads(part.read_bytes())
             part.rename(p)
+        from .output_names import allocate
+        allocate(self.store,jid,items,m["job"]["request"]["settings"].get("stitched",False))
         folder=m["job"]["request"]["input"].get("output_folder")
         if folder:
             try:
