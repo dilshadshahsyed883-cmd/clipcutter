@@ -4,12 +4,13 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.auth import Principal, current_principal
+from app.auth import Principal, current_principal, admin_principal
 from app.config import load_settings
 from app.modules.admin.security import COOKIE, SESSION_COOKIE_MAX_AGE
 from app.modules.admin.routes import router as admin_router
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.studio.routes import router as studio_router
+from app.modules.studio.gpu import router as gpu_router
 
 ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -22,6 +23,7 @@ def create_app():
     app.include_router(admin_router)
     app.include_router(dashboard_router)
     app.include_router(studio_router)
+    app.include_router(gpu_router)
 
     @app.middleware("http")
     async def renew_cookie(request: Request, call_next):
@@ -61,6 +63,10 @@ def create_app():
     @app.get("/studio/analyzer")
     async def analyzer(request: Request, principal: Principal = Depends(current_principal)):
         return studio(request, principal, "analyzer", "Person Analyzer", "Analyze and group people in source videos.")
+
+    @app.get("/studio/gpu-config")
+    async def gpu_config(request: Request, principal: Principal = Depends(admin_principal)):
+        return studio(request, principal, "gpu", "GPU Config", "Configure the dedicated ClipCutter GPU worker.")
 
     return app
 
