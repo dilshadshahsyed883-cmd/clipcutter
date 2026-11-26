@@ -1,0 +1,6 @@
+# Independent Linux worker, CUDA 12.x / cuDNN 9 candidate.
+av==16.1.0
+numpy==2.3.5
+opencv-python-headless==4.13.0.92
+onnxruntime-gpu==1.23.2
+pydantic==2.13.5
