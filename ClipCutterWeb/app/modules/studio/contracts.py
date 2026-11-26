@@ -41,7 +41,7 @@ def youtube_link(value):
 
 class Input(Strict):
     source: str=Field(min_length=1,max_length=2048)
-    source_kind: Literal["auto","video","zip","folder","youtube"]="auto"
+    source_kind: Literal["auto","video","zip","folder","youtube"]="video"
     output_folder: str | None=Field(default=None,max_length=2048)
     @field_validator("output_folder")
     @classmethod

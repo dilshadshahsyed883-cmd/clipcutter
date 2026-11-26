@@ -58,6 +58,13 @@ def cancel(job:str,s:Store=Depends(store)):
         discard_uploads(s,job)
         return row
 
+@router.delete("/requests/{job}",dependencies=[Depends(require_csrf)])
+def delete(job:str,s:Store=Depends(store)):
+    with s.admission():
+        row=s.delete_request(job)
+        discard_uploads(s,job)
+        return row
+
 @router.get("/requests/{job}/batch")
 def batch(job:str,s:Store=Depends(store)):
     from .batch import members

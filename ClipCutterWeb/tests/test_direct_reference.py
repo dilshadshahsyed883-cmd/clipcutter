@@ -10,7 +10,7 @@ from test_studio import request,FILE,FOLDER
 
 class DirectReferenceTests(unittest.TestCase):
     def test_detect_links(self):
-        p=request();p["input"].pop("source_kind")
+        p=request();p["input"]["source_kind"]="auto"
         self.assertEqual(JobRequest.model_validate(p).input.source_kind,"auto")
         p["input"]["source"]=FOLDER
         self.assertEqual(JobRequest.model_validate(p).input.source_kind,"folder")
@@ -32,9 +32,21 @@ class DirectReferenceTests(unittest.TestCase):
             discard_uploads(s,j["id"])
             self.assertFalse((s.root/"reference-uploads"/p["request_id"]).exists())
     def test_resolution_preserves_idempotency(self):
-        p=request();p["input"].pop("source_kind")
+        p=request();p["input"]["source_kind"]="auto"
         with tempfile.TemporaryDirectory() as d:
             s=Store("owner",Path(d).resolve());req=JobRequest.model_validate(p)
             j=s.create(req);s.transition(j["id"],"awaiting_input","staging","test")
             s.resolve_source(j["id"],"video")
             self.assertEqual(s.create(req)["id"],j["id"])
+
+    def test_delete_inactive_and_protect_active(self):
+        p=request()
+        with tempfile.TemporaryDirectory() as d:
+            s=Store("owner",Path(d).resolve())
+            j=s.create(JobRequest.model_validate(p))
+            self.assertEqual(s.delete_request(j["id"])["state"],"deleted")
+            self.assertEqual(s.list("extractor"),[])
+            p["request_id"]="b"*32
+            active=s.create(JobRequest.model_validate(p))
+            s.transition(active["id"],"awaiting_input","staging","test")
+            with self.assertRaises(HTTPException):s.delete_request(active["id"])

@@ -68,7 +68,7 @@
  }
  function payload(){
    const f=new FormData(form), get=k=>f.get(k), num=k=>Number(get(k)), bool=k=>get(k)==="true", opt=k=>String(get(k)||"").trim()||null;
-   const input={source:String(get("source")).trim(),output_folder:opt("output_folder")};
+   const input={source:String(get("source")).trim(),source_kind:"auto",output_folder:opt("output_folder")};
    let settings={kind,reference_link:refMode.value==="drive"?opt("reference_link"):null};
    if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:form.elements.include_audio.disabled?false:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
    else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
@@ -140,6 +140,7 @@
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="awaiting_input"||job.state==="staging"||(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:"))))actions.append(button(job.state==="awaiting_input"?"Download input":"Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
+       if(["awaiting_input","ready","failed","cancelled","completed"].includes(job.state))actions.append(button("Delete",async()=>{if(!confirm("Delete this request from the queue? Active GPU attempts cannot be deleted."))return;try{await api("/requests/"+job.id,"DELETE");if(selected===job.id){selected=null;$( "output-list").replaceChildren();$("output-preview").pause();$("output-preview").removeAttribute("src");$("output-preview").load();$("output-preview").hidden=true;$("output-status").textContent="Request deleted.";}await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.state==="awaiting_input")actions.append(button("Cancel",async()=>{try{await api("/requests/"+job.id+"/cancel","POST");await refresh();if(selected===job.id)await showOutputs(job.id);}catch(err){status.textContent=err.message;}}));
        tr.append(actions);rows.append(tr);}
    }catch(err){status.textContent="Refresh failed: "+err.message;}finally{refreshing=false;}

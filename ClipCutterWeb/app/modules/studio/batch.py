@@ -166,5 +166,5 @@ def members(store,parent):
         store.row(c,parent)
         if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='batch_members'").fetchone():return []
         rows=c.execute("""SELECT b.ordinal,b.label,r.* FROM batch_members b JOIN requests r ON r.id=b.child_id
-                         WHERE b.parent_id=? AND r.owner=? ORDER BY b.ordinal""",(parent,store.owner)).fetchall()
+                         WHERE b.parent_id=? AND r.owner=? AND r.state!='deleted' ORDER BY b.ordinal""",(parent,store.owner)).fetchall()
         return [{**store.public(x),"ordinal":x["ordinal"],"label":x["label"]} for x in rows]

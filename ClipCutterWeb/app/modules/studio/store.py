@@ -98,7 +98,7 @@ class Store:
 
     def list(self,kind):
         with self.connect() as c:
-            rows=c.execute("SELECT * FROM requests WHERE owner=? AND kind=? ORDER BY created_at DESC,id DESC LIMIT 200",(self.owner,kind)).fetchall()
+            rows=c.execute("SELECT * FROM requests WHERE owner=? AND kind=? AND state!='deleted' ORDER BY created_at DESC,id DESC LIMIT 200",(self.owner,kind)).fetchall()
             return [self.public(r) for r in rows]
 
     def row(self,c,jid):
@@ -121,6 +121,21 @@ class Store:
             if row["state"]!="staging" or payload["input"]["source_kind"]!="auto": raise RuntimeError("Stale source detection")
             payload["input"]["source_kind"]=kind
             c.execute("UPDATE requests SET payload=? WHERE id=? AND owner=?",(json.dumps(payload,sort_keys=True,separators=(",",":")),jid,self.owner))
+
+    def delete_request(self,jid):
+        """Tombstone inactive requests; never abandon an unresolved GPU attempt."""
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=self.row(c,jid)
+            if row["state"]=="deleted":return self.public(row)
+            if row["state"] not in ("awaiting_input","ready","failed","cancelled","completed"):
+                raise HTTPException(409,"Active or batch parent requests cannot be deleted")
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone():
+                attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
+                if attempt and attempt["phase"] not in ("acknowledged","failed","cancelled"):
+                    raise HTTPException(409,"GPU attempt must be reconciled before deletion")
+            c.execute("UPDATE requests SET state='deleted',message='Deleted by owner',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
+            return self.public(self.row(c,jid))
 
     def cancel(self,jid):
         with self.connect() as c:
