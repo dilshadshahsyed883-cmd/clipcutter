@@ -1,6 +1,6 @@
 # ClipCutter Web — VPS basic setup record
 
-Date: 2026-11-26. Owner executed the commands manually on the VPS and provided terminal output in the setup conversation. This is an observed preparation record, not a deployed application or a live health test. Follow [CONTROL_ARCHITECTURE.md](CONTROL_ARCHITECTURE.md) for the approved deployment policy.
+Date: 2026-11-26. Owner executed the commands manually on the VPS and provided terminal output in the setup conversation. This record covers observed preparation and the first successful live foundation deployment. Evidence is owner-supplied terminal output and a browser screenshot; it does not establish end-to-end processing readiness. Follow [CONTROL_ARCHITECTURE.md](CONTROL_ARCHITECTURE.md) for the approved deployment policy.
 
 ## Verified host and capacity
 
@@ -29,7 +29,7 @@ Capacity and port checks are snapshots, not reservations or load-test results. R
 - Environment file `/etc/clipcutter-web/clipcutter-web.env` created; terminal stat confirmed root:root, mode 0600. A random 32-byte hex session secret was generated on the host; never print, copy or commit its value.
 - Systemd unit `/etc/systemd/system/clipcutter-web.service` created, daemon-reload executed. Reported `LoadState=loaded`, `ActiveState=inactive`, `UnitFileState=disabled`. Do not start or enable until a reviewed release is staged and prerequisites pass.
 
-### Proposed environment contract (already provisioned on host)
+### Historical initial environment contract (superseded by admin bootstrap)
 
 ```dotenv
 CLIPCUTTER_HOST=127.0.0.1
@@ -39,9 +39,9 @@ CLIPCUTTER_DATA_DIR=/var/lib/clipcutter-web
 CLIPCUTTER_SESSION_SECRET=<generated on host; not recorded>
 ```
 
-Application implementation must match or explicitly migrate these names. Preserve the generated secret and persistent state across releases.
+The initial file was privately backed up during the first admin bootstrap and replaced with the foundation's actual environment contract below. Preserve the active credentials, session secret and persistent state across releases.
 
-### Installed systemd unit (record of supplied command)
+### Historical initial systemd unit (superseded by repository unit)
 
 ```ini
 [Unit]
@@ -69,7 +69,7 @@ UMask=0077
 WantedBy=multi-user.target
 ```
 
-This is a proposed entrypoint/runtime contract, not proof that run.py, a release virtualenv or the current symlink exists. Verify compatibility with the implemented backend before starting. Release code and runtime must be immutable to the service user.
+The initial unit was backed up and replaced with the exact repository unit during bootstrap.
 
 ## DNS and TLS
 
@@ -81,18 +81,36 @@ DNS resolves correctly on the VPS. Existing certificates for app.scenebuilder.on
 - Verified certificate name and domain: clip.scenebuilder.online; ECDSA; expiry 2027-02-24 11:38:54 UTC.
 - Certificate: `/etc/letsencrypt/live/clip.scenebuilder.online/fullchain.pem`; private key: `/etc/letsencrypt/live/clip.scenebuilder.online/privkey.pem`. Never copy key contents into Git.
 - Certbot reported scheduled automatic renewal. Renewal dry-run and future Nginx reload behavior have not been verified.
-- Owner authorized temporary HTTPS activation on 2026-11-26 before backend deployment. The dedicated Nginx site was backed up under `/var/backups/clipcutter-web/nginx.*` and updated with a port 443 SSL server for `clip.scenebuilder.online`, using the existing certificate and TLS 1.2/1.3. Its root location returns a static HTTP 200 HTML page titled ClipCutter Web — Coming Soon; no application proxy is configured yet.
-- Owner supplied successful `nginx -t`, reload and `HTTPS ACTIVATED` output, followed by another successful `nginx -t` and `active` output. Subsequent VPS `curl -I https://clip.scenebuilder.online` succeeded with HTTP/1.1 200 OK, nginx/1.24.0, text/html, Content-Length 263 at 2026-11-26 12:41:33 UTC. HTTPS response and certificate trust verified from the VPS; HTTP redirect response and independent external-client verification have not been supplied. Recheck existing sites and service health before final application cutover.
-- Backend deployment and reverse proxy to 127.0.0.1:18874 remain pending. The static placeholder is not proof of application readiness.
+- Owner authorized temporary HTTPS activation on 2026-11-26 before backend deployment. The dedicated Nginx site was backed up under `/var/backups/clipcutter-web/nginx.*` and updated with a port 443 SSL server for `clip.scenebuilder.online`, using the existing certificate and TLS 1.2/1.3. Its root location initially returned a static HTTP 200 HTML page titled ClipCutter Web — Coming Soon. The placeholder was subsequently replaced by the live reverse proxy.
+- Owner supplied successful `nginx -t`, reload and `HTTPS ACTIVATED` output, followed by another successful `nginx -t` and `active` output. Subsequent VPS `curl -I https://clip.scenebuilder.online` succeeded with HTTP/1.1 200 OK, nginx/1.24.0, text/html, Content-Length 263 at 2026-11-26 12:41:33 UTC. HTTPS response and certificate trust verified from the VPS. HTTP 301 redirect to the exact HTTPS hostname was also verified at 12:40:40 UTC.
+- The backend and reverse proxy were subsequently activated as recorded below.
 
-Do not request a duplicate certificate unnecessarily. Reuse the existing valid certificate at guarded HTTPS cutover.
+Do not request a duplicate certificate unnecessarily. The existing certificate remains in use.
 
-## Remaining work (not completed)
+## First live foundation release — 2026-11-26
 
-1. Implement and test the standalone ClipCutterWeb application, Dashboard, Admin & Security, two processing tabs, queue and worker integration per approved scope.
-2. Implement and review ClipCutter-specific guarded deployment helper, bootstrap, release staging and rollback. Proposed helper path: /usr/local/sbin/clipcutter-web-deploy. Do not reuse or invoke Concat's helper. No helper was installed during VPS preparation.
-3. Verify exact approved main SHA, source-level tests, archive digest, host capacity, free port and existing service health; stage only ClipCutterWeb under /srv/clipcutter-web/releases/<SHA>. Preserve persistent data and use verified atomic current symlink, independent admin initialization, health identity and anonymous access denial. Enable/start only when the reviewed release procedure allows it.
-4. After successful loopback verification, replace only the ClipCutter HTTPS placeholder with a guarded reverse proxy to the independent backend, retaining the already issued dedicated certificate and HTTP redirect. Preserve the HTTP ACME challenge, verify certificate validity and renewal, nginx -t, public HTTPS and existing sites. Roll back only ClipCutter changes on failure.
-5. Verify worker and queue behavior independently before production GPU usage.
+- Approved staged source SHA: `b7ae1894dac0de1909a7bbc36a188cda02a986f2`. The clone and remote main matched during preparation. This is the deployed SHA, not necessarily the latest repository main.
+- Repository systemd unit `ClipCutterWeb/deploy/clipcutter-web.service` replaced the initial unit after a private backup. Entry point now uses absolute run.py path. Bootstrap returned `BOOTSTRAP=PASS SERVICE_NOT_STARTED`.
+- Canonical helper installed root-owned at `/usr/local/sbin/clipcutter-web-deploy`, from repository `deploy/guarded-release.sh`. Command order: `<exact-main-SHA> preflight`, then `<exact-main-SHA> stage`. No Concat helper was used.
+- Initial private environment was moved to a root-only backup, then `init-local-admin.py` created the replacement environment and `check-env.py` returned 18874. Admin username is independently configured; credentials and secret values are not recorded here.
+- Active environment contract: `CLIPCUTTER_AUTH_MODE=local-admin`, `CLIPCUTTER_ADMIN_USERNAME`, `CLIPCUTTER_ADMIN_PASSWORD_HASH`, `CLIPCUTTER_ADMIN_SESSION_SECRET`, `CLIPCUTTER_WEB_SECURITY_DB=/var/lib/clipcutter-web/security.sqlite3`, `CLIPCUTTER_WEB_DATA_ROOT=/var/lib/clipcutter-web`, `CLIPCUTTER_WEB_PUBLIC_ORIGIN=https://clip.scenebuilder.online`, `CLIPCUTTER_WEB_HOST=127.0.0.1`, `CLIPCUTTER_WEB_PORT=18874`. Mode 0600; do not print values of secrets.
+- Guarded preflight passed. Stage installed dependencies, passed 15/15 source tests, reported `SQLITE_BACKUP=PASS`, and returned `STAGED_SHA=b7ae1894dac0de1909a7bbc36a188cda02a986f2 BACKUP=/var/backups/clipcutter-web/release.N098Ct9L PUBLIC_NGINX=UNCHANGED`. The intentional mocked metrics failure test passed; initial connection refusal during service startup recovered. Preflight and stage archive SHA256 outputs differed; archive digest determinism is not established.
+- Current release path: `/srv/clipcutter-web/releases/b7ae1894dac0de1909a7bbc36a188cda02a986f2`. Service reported active. Loopback health returned `{"ok":true,"service":"clipcutter-web"}`. Concat service remained active.
 
-No EXE build, GitHub Actions build/deploy workflow, remote SSH automation, changes to existing Concat/Scene services, or paid GPU provisioning are authorized by this record. Basic VPS preparation and HTTPS placeholder verification from the VPS complete; HTTP redirect verification, application deployment and public application activation pending.
+## Live HTTPS cutover
+
+The repository's new-site cutover script rejects an already existing hostname. A separate manual, ClipCutter-only guarded adoption was therefore used for the existing no-extension Nginx site file.
+
+- First attempt: public health returned non-JSON, triggering restoration of the backed-up placeholder and Nginx reload. Root cause unconfirmed.
+- Second attempt: locked release/cutover, verified local backend, backed up existing configuration, replaced only the static Coming Soon location with proxy_pass to 127.0.0.1:18874; preserved HTTP redirect, ACME webroot, certificate and TLS configuration. Uses forwarded host/proto/IP, clears auth identity headers, disables access logging, and limits request body to 4m.
+- Nginx syntax and reload succeeded; retry-based local TLS check using --resolve and --noproxy passed exact backend health JSON, anonymous 401 for /dashboard, /admin and /api/v1/session, and 200 for /auth/login. Concat service active. Terminal reported HTTPS REVERSE PROXY PASS.
+- Owner browser screenshot at approximately 12:54 UTC shows authenticated https://clip.scenebuilder.online/dashboard, sidebar Dashboard / ClipCutter Studio / Admin, signed-in identity, sign out control, auto refresh 10 sec, VPS Online, service health 10/10, CPU 0% at sample (4 cores), RAM 53% (4.0/7.6 GB), storage 42.5%, free storage 41.2 GB, load average 0.48 and uptime 40d 20h 56m. These are displayed snapshot values, not independently audited telemetry. Successful browser login and dashboard rendering confirmed; live logout/revocation and other pages not individually verified.
+
+## Remaining work
+
+1. Confirm systemd UnitFileState; service is running but boot enablement has not been verified. Enable only with owner approval. Verify certificate renewal dry-run and Nginx reload hook separately.
+2. Add reviewed existing-site adoption procedure and reproducible archive/dependency integrity checks to repository release tooling; do not create a conflicting Nginx site. For future processing releases add safe job drainage and migration/rollback gates. Do not assume full data rollback from code rollback.
+3. Test browser logout, session revocation, admin settings and both Studio tabs. Verify host service allowlist and existing sites independently.
+4. Implement/test Clip Extractor, Person Analyzer, persistent queue and independent SaladCloud GPU integration. The deployed foundation Studio processing pages are placeholders; no live media processing or GPU acceptance has been demonstrated.
+
+No EXE build, GitHub Actions build/deploy workflow, remote SSH automation, modifications to Concat/Scene service configuration, or paid GPU provisioning were performed as part of this record. Basic VPS setup, foundation deployment, live HTTPS and authenticated Dashboard are complete.
