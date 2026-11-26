@@ -42,7 +42,7 @@ class YoutubeTests(unittest.TestCase):
             def job(key):
                 return s.create(JobRequest.model_validate({"request_id":key*32,
                     "input":{"source":URL,"source_kind":"youtube"},"settings":{"kind":"analyzer"}}))["id"]
-            def fake(store,url,target,remaining):
+            def fake(store,url,target,remaining,progress=None):
                 data=b"\x00\x00\x00\x18ftypmp42"
                 target.write_bytes(data)
                 return {"name":"source.mp4","size":len(data),"sha256":hashlib.sha256(data).hexdigest(),

@@ -1,11 +1,13 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, File, Form, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from typing import Literal
 from app.auth import Principal,current_principal
 from app.modules.admin.security import require_csrf
 from .contracts import JobRequest
 from .store import Store
-from .intake import Bridge, stage
+from .intake import Bridge
+from .scheduler import Control
+from .lifecycle import LifecycleError
 from . import youtube
 from .review import Approval, get_review, approve
 from .uploads import create_uploaded, discard_uploads
@@ -33,19 +35,22 @@ def upload(payload:str=Form(...),images:list[UploadFile]=File(...),s:Store=Depen
     return create_uploaded(s,payload,images)
 
 @router.get("/requests")
-def listing(kind:Literal["extractor","analyzer"],s:Store=Depends(store)): return {"requests":s.list(kind)}
+def listing(kind:Literal["extractor","analyzer"],s:Store=Depends(store)):
+    return {"requests":s.list(kind),"paused":Control(s).snapshot()["paused"]}
+
+@router.post("/queue/{action}",dependencies=[Depends(require_csrf)])
+def queue_action(action:Literal["pause","resume"],s:Store=Depends(store)):
+    try:return {"paused":Control(s).set_paused(action=="pause")["paused"]}
+    except LifecycleError as e:raise HTTPException(409,str(e)) from None
 
 @router.post("/requests/{job}/intake",dependencies=[Depends(require_csrf)],status_code=202)
-def intake(job:str,tasks:BackgroundTasks,s:Store=Depends(store)):
-    row=s.get(job)
-    if row["state"] not in ("awaiting_input","staging","failed") or (row["state"]=="failed" and not row["message"].startswith(("Drive intake:","YouTube intake:"))):
-        raise HTTPException(409,"Intake not available in this state")
-    is_youtube=row["input"]["source_kind"]=="youtube"
-    if is_youtube and not youtube.available():
-        raise HTTPException(503,"YouTube runtime or private cookies not configured")
-    if (not is_youtube or row["settings"].get("reference_link")) and not Bridge().available():
-        raise HTTPException(503,"Drive intake bridge unavailable")
-    tasks.add_task(stage,s,job)
+def intake(job:str,s:Store=Depends(store)):
+    # Requeue only a failed intake. Never start another active transfer from HTTP.
+    with s.admission():
+        row=s.get(job)
+        if row["state"]!="failed" or not row["message"].startswith(("Drive intake:","YouTube intake:")):
+            raise HTTPException(409,"Retry is available only for failed input downloads")
+        s.transition(job,"failed","awaiting_input","Queued for input retry")
     return {"accepted":True}
 
 @router.get("/requests/{job}")

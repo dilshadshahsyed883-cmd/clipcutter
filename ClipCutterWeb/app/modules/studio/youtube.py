@@ -79,7 +79,7 @@ def verify(path):
     except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
         raise RuntimeError("YouTube file failed video-only media verification") from None
 
-def download(store,url,target,remaining):
+def download(store,url,target,remaining,progress=None):
     if not available():
         raise RuntimeError("YouTube runtime or private cookies not configured")
     url=youtube_link(url)
@@ -105,9 +105,14 @@ def download(store,url,target,remaining):
                                       stdout=subprocess.DEVNULL,stderr=log,env=env,
                                       start_new_session=True)
                 deadline=time.monotonic()+TIMEOUT
+                last_progress=0.0
                 try:
                     while proc.poll() is None:
                         used=sum(p.stat().st_size for p in work.iterdir() if p.is_file() and not p.is_symlink())
+                        now=time.monotonic()
+                        if progress is not None and now-last_progress>=2:
+                            received=sum(p.stat().st_size for p in work.glob("source.*") if p.is_file() and not p.is_symlink() and not p.name.endswith(".ytdl"))
+                            progress(received);last_progress=now
                         if used>limit+2*1024**2 or shutil.disk_usage(work).free<RESERVE:
                             raise RuntimeError("YouTube download exceeded VPS storage limit")
                         if time.monotonic()>=deadline:
