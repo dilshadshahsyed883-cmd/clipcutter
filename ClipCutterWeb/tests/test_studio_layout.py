@@ -39,3 +39,10 @@ class StudioLayoutTests(unittest.TestCase):
         self.assertIn('await api("/requests/"+job.id,"DELETE")',js)
         self.assertIn("deleting.has(job.id)",js)
         self.assertIn("deleted.add(job.id)",js)
+
+    def test_identity_library_controls(self):
+        env=Environment(loader=FileSystemLoader(ROOT/"app/templates"))
+        html=env.get_template("studio.html").render(page={"key":"extractor","title":"Clip Extractor"})
+        for id in ("identity-dialog","identity-add","identity-rename","identity-delete-selected","identity-files","identity-import","output-zip","output-identity-filter"):
+            self.assertIn('id="'+id+'"',html)
+        self.assertNotIn('id="identity-dialog"',env.get_template("studio.html").render(page={"key":"analyzer","title":"Person Analyzer"}))

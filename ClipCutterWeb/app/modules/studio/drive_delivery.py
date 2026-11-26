@@ -112,7 +112,9 @@ def _deliver_one(store,jid,folder,dest,items):
           job_id TEXT NOT NULL REFERENCES requests(id),name TEXT NOT NULL,folder TEXT NOT NULL,
           sha256 TEXT NOT NULL,phase TEXT NOT NULL,PRIMARY KEY(job_id,name))""")
     for item in items:
-        name=item["name"];remote_name="clipcutter-"+jid+"-"+name;path=dest/name
+        name=item["name"];path=dest/name
+        from .output_names import alias_for
+        remote_name=alias_for(store,jid,name) or "clipcutter-"+jid+"-"+name
         if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",name)
             or path.resolve()!=path or not path.is_file() or path.stat().st_size!=item["size"]):
             raise DeliveryError("Unsafe or changed VPS output")

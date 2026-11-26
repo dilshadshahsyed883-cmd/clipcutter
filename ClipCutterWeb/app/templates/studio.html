@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/studio.css?v=20261126-input-row-1">
+<link rel="stylesheet" href="/static/studio.css?v=20261126-identity-1">
 <div id="studio" data-kind="{{ page.key }}">
 <nav class="studio-subtabs" aria-label="{{ page.title }} sections">
 <button type="button" data-view="new" aria-pressed="true" aria-controls="studio-new">{{ 'New Request' if page.key == 'extractor' else 'New Analysis' }}</button>
@@ -13,10 +13,11 @@
 <label>Source link (Drive / YouTube) <input name="source" type="url" required maxlength="2048" placeholder="Paste video or Drive URL" autocomplete="off"></label>
 <label>Output Drive folder (optional) <input name="output_folder" type="url" maxlength="2048" placeholder="Paste folder URL" autocomplete="off"></label>
 {% if page.key == 'extractor' %}
-<label>Reference source <select name="reference_mode"><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label>
+<label>Reference source <select name="reference_mode"><option value="library">Identity Library</option><option value="upload">Upload from PC</option><option value="drive">Google Drive</option></select></label>
 <div class="studio-reference-control">
 <label id="reference-drive" hidden>Reference images <input name="reference_link" type="url" maxlength="2048" placeholder="Paste image or folder URL" autocomplete="off" disabled></label>
-<div id="reference-upload">
+<div id="reference-library-control"><label for="reference-library-open">Reference identity</label><button type="button" class="studio-secondary studio-file-button" id="reference-library-open"><span id="reference-identity-label">Choose identity</span><span aria-hidden="true">+</span></button></div>
+<div id="reference-upload" hidden>
 <label for="reference-files">Reference images</label>
 <input id="reference-files" class="studio-file-input" type="file" multiple accept=".jpg,.jpeg,.png,.webp" aria-describedby="reference-limits">
 <button type="button" class="studio-secondary studio-file-button" id="reference-browse" aria-describedby="reference-limits"><span id="reference-count">Choose images</span><span aria-hidden="true">+</span></button>
@@ -25,6 +26,7 @@
 {% endif %}
 </div>
 {% if page.key == 'extractor' %}
+<div id="reference-library-summary" class="studio-note" aria-live="polite"></div>
 <div id="reference-details"><small id="reference-limits">JPG, PNG, WEBP · Up to 12 images · 10 MiB each · 120 MiB total</small><div id="reference-preview" aria-live="polite"></div></div>
 {% endif %}
 {% if page.key == 'extractor' %}
@@ -56,6 +58,18 @@
 {% endif %}
 <div class="studio-actions"><button type="submit" id="save-request">{{ "Save Request" if page.key == "extractor" else "Save Analysis" }}</button></div>
 </form>
+{% if page.key == "extractor" %}
+<dialog id="identity-dialog" class="studio-identity-dialog" aria-labelledby="identity-title">
+<div class="studio-heading"><h2 id="identity-title">Reference Identity Library</h2><button type="button" id="identity-close" class="studio-secondary">Close</button></div>
+<div class="studio-actions"><input id="identity-new-name" maxlength="100" placeholder="Identity name" aria-label="New identity name"><button type="button" id="identity-add">Add Identity</button><input id="identity-search" placeholder="Search identities" aria-label="Search identities"><button type="button" id="identity-refresh" class="studio-secondary">Refresh</button></div>
+<p id="identity-status" role="status" aria-live="polite"></p><div id="identity-grid"></div>
+<div id="identity-editor" hidden><div class="studio-heading"><h3 id="identity-selected-name"></h3><button type="button" id="identity-use">Use Identity</button></div>
+<div class="studio-actions"><input id="identity-rename-name" maxlength="100" aria-label="Identity name"><button type="button" id="identity-rename" class="studio-secondary">Rename Identity</button><button type="button" id="identity-delete" class="studio-danger">Delete Identity</button></div>
+<div class="studio-actions"><label class="studio-secondary studio-library-file">Upload Images<input id="identity-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp"></label><input id="identity-drive-link" type="url" placeholder="Drive image / folder URL" aria-label="Drive reference link"><button type="button" id="identity-import" class="studio-secondary">Import Drive</button><button type="button" id="identity-cancel-upload" class="studio-secondary" hidden>Cancel uploads</button></div>
+<div id="identity-upload-progress" role="status" aria-live="polite"></div>
+<div class="studio-actions"><button type="button" id="identity-select-all" class="studio-secondary">Select All</button><button type="button" id="identity-deselect-all" class="studio-secondary">Deselect All</button><button type="button" id="identity-delete-selected" class="studio-danger">Delete Selected</button></div><div id="identity-images" class="studio-image-grid"></div>
+</div></dialog>
+{% endif %}
 </section>
 <section class="content-card studio-card" id="studio-queue" data-panel="queue" hidden>
 <div class="studio-heading"><h2>Request queue</h2><div class="studio-actions"><span id="queue-status" role="status" class="studio-status-chip">Checking…</span><button id="queue-pause" class="studio-secondary" type="button" disabled>Pause Queue</button><button id="queue-resume" type="button" disabled>Resume Queue</button></div></div>
@@ -68,7 +82,7 @@
 <div class="studio-actions"><button type="button" id="review-add" class="studio-secondary">Add range</button><button type="button" id="review-approve" disabled>Approve export</button></div>
 </section>
 <section class="content-card studio-card" id="studio-results" data-panel="results" hidden>
-<h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2><label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
-<div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
+<h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2>{% if page.key == "extractor" %}<label>Identity filter <select id="output-identity-filter"><option value="">All identities</option></select></label>{% endif %}<label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
+{% if page.key == "extractor" %}<div id="output-controls" class="studio-actions" hidden><button type="button" id="output-select-all" class="studio-secondary">Select All</button><button type="button" id="output-deselect-all" class="studio-secondary">Deselect All</button><button type="button" id="output-delete-selected" class="studio-danger">Delete Selected</button><span class="studio-note">Rename/delete here affects the local library only; delivered Drive files are unchanged.</span><button type="button" id="output-zip" class="studio-secondary">Download Selected ZIP</button></div>{% endif %}<div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261126-delete-direct-1"></script>
+</div><script defer src="/static/studio.js?v=20261126-identity-2"></script>

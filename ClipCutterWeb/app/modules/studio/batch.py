@@ -148,6 +148,7 @@ def expand(store,parent,root,manifest):
                 c.execute("INSERT INTO requests VALUES (?,?,?,?,?,?,?,?,?,?)",(child,req.request_id,store.owner,
                     req.settings.kind,payload,"ready",now,now,100,f"Batch {parent[:8]} · video {index}/{len(children)}: {label}"))
                 c.execute("INSERT INTO batch_members VALUES (?,?,?,?)",(parent,child,index,label))
+                c.execute("INSERT INTO request_identities SELECT ?,identity_id,label,slug FROM request_identities WHERE job_id=?",(child,parent))
             syncdir(inputs)
             c.execute("UPDATE requests SET state='batch_expanded',progress=100,message=?,updated_at=? WHERE id=?",
                       (f"Verified batch: {len(children)} independent video requests",now,parent))

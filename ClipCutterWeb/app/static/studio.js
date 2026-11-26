@@ -10,7 +10,7 @@
    if(view!=="results")$("output-preview").pause();
  }
  root.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>setView(b.dataset.view));
- $("result-request").onchange=()=>{const id=$("result-request").value;if(id)showOutputs(id);else{selected=null;++seq;$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a request.";}};
+ $("result-request").onchange=()=>{const id=$("result-request").value;if(id)showOutputs(id);else{selected=null;++seq;if(kind==="extractor")$("output-controls").hidden=true;$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a request.";}};
  const put=(tag,text)=>{const e=document.createElement(tag);e.textContent=text;return e;};
  async function api(path,method="GET",body){
    const headers={Accept:"application/json"};
@@ -46,8 +46,8 @@
  form.elements.source.addEventListener("input",syncSource);syncSource();
  const refMode=form.elements.reference_mode, fileInput=$("reference-files");
  function syncReferences(){
-   const drive=refMode.value==="drive";
-   $("reference-drive").hidden=!drive;$("reference-upload").hidden=drive;$("reference-details").hidden=drive;
+   const drive=refMode.value==="drive",library=refMode.value==="library";
+   $("reference-drive").hidden=!drive;$("reference-upload").hidden=drive||library;$("reference-details").hidden=drive||library;$("reference-library-control").hidden=!library;$("reference-library-summary").hidden=!library;
    form.elements.reference_link.disabled=!drive;
    form.elements.reference_link.required=drive&&kind==="extractor"&&(form.elements.mode.value!=="manual"||form.elements.framing.value!=="whole");
  }
@@ -89,23 +89,131 @@
    e.preventDefault();if(saving)return;
    const p=payload(), files=refMode?.value==="upload"?[...refsSelected]:[];
    if(refMode?.value==="upload"&&kind==="extractor"&&(p.settings.mode==="reference"||p.settings.framing!=="whole")&&!files.length){status.textContent="Select reference images.";return;}
-   const fingerprint=JSON.stringify([p,files.map(f=>[f.name,f.size,f.lastModified])]);
+   const library=refMode?.value==="library",chosen=library?selectedIdentity:null;
+   if(library&&!chosen&&(p.settings.mode==="reference"||p.settings.framing!=="whole")){status.textContent="Choose a reference identity.";return;}
+   const fingerprint=JSON.stringify([p,chosen,files.map(f=>[f.name,f.size,f.lastModified])]);
    if(lastPayload!==fingerprint||!key){key=crypto.randomUUID().replaceAll("-","");lastPayload=fingerprint;}
    saving=true;$("save-request").disabled=true;status.textContent="Saving request…";
-   try{const r=files.length?await uploadRequest({...p,request_id:key},files):await api("/requests","POST",{...p,request_id:key});status.textContent="Saved "+r.id.slice(0,8)+" — "+r.message;key=null;refsSelected=[];drawReferences();setView("queue");await refresh();}
+   try{const r=chosen?await api("/identity-requests","POST",{identity_id:chosen.id,request:{...p,request_id:key}}):files.length?await uploadRequest({...p,request_id:key},files):await api("/requests","POST",{...p,request_id:key});status.textContent="Saved "+r.id.slice(0,8)+" — "+r.message;key=null;refsSelected=[];drawReferences();setView("queue");await refresh();}
    catch(err){status.textContent=err.message;}finally{saving=false;$("save-request").disabled=false;}
  });
+ let selectedIdentity=null,libraryItems=[],editingIdentity=null,libraryBusy=false,activeUpload=null,cancelUpload=false;
  function button(label,fn){const b=put("button",label);b.type="button";b.className="studio-secondary";b.onclick=fn;return b;}
+
+ if(kind==="extractor"){
+   const dialog=$("identity-dialog"),note=$("identity-status"),grid=$("identity-grid"),images=$("identity-images");
+   const value=id=>$(id).value.trim(),selection=()=>[...images.querySelectorAll("input[data-image]:checked")].map(x=>x.value);
+   const setNote=x=>note.textContent=x;
+   async function loadLibrary(){
+     libraryItems=(await api("/identities")).identities;
+     if(selectedIdentity){const next=libraryItems.find(x=>x.id===selectedIdentity.id);if(next){selectedIdentity=next;applyChoice(next);}else{selectedIdentity=null;$("reference-identity-label").textContent="Choose identity";$("reference-library-summary").textContent="";}}
+     if(editingIdentity&&!libraryItems.some(x=>x.id===editingIdentity))editingIdentity=null;
+     drawLibrary();
+   }
+   function applyChoice(item){
+     selectedIdentity=item;$("reference-identity-label").textContent=item.name;
+     $("reference-library-summary").textContent=item.images.length+" reference images · "+item.slug+"_###.mp4 naming";
+   }
+   function drawLibrary(){
+     const q=value("identity-search").toLowerCase();grid.replaceChildren();
+     for(const item of libraryItems.filter(x=>x.name.toLowerCase().includes(q))){
+       const b=button(item.name+" · "+item.images.length+" images",()=>{editingIdentity=item.id;drawLibrary();});
+       b.setAttribute("aria-pressed",String(item.id===editingIdentity));grid.append(b);
+     }
+     const item=libraryItems.find(x=>x.id===editingIdentity);$("identity-editor").hidden=!item;if(!item)return;
+     $("identity-selected-name").textContent=item.name+" · "+item.images.length+" / 12 images";
+     $("identity-rename-name").value=item.name;$("identity-use").disabled=!item.images.length||libraryBusy;images.replaceChildren();
+     for(const image of item.images){
+       const tile=put("div","");tile.className="studio-image-tile";
+       const pic=document.createElement("img");pic.src="/api/v1/studio/identities/"+item.id+"/images/"+image.id;pic.alt=image.name;pic.loading="lazy";
+       const choice=document.createElement("input");choice.type="checkbox";choice.dataset.image="";choice.value=image.id;choice.setAttribute("aria-label","Select "+image.name);
+       const name=document.createElement("input");name.value=image.name;name.maxLength=100;name.setAttribute("aria-label","Image name");
+       const replacement=document.createElement("input");replacement.type="file";replacement.accept=".jpg,.jpeg,.png,.webp";replacement.hidden=true;
+       replacement.onchange=()=>{if(replacement.files.length)uploadFiles([replacement.files[0]],image.id);};
+       const tools=put("div","");tools.className="studio-actions";
+       tools.append(choice,button("Rename",()=>act(async()=>api("/identities/"+item.id+"/images/"+image.id,"PATCH",{name:name.value}))),button("Replace",()=>replacement.click()),button("Delete",()=>act(async()=>api("/identities/"+item.id+"/images/delete","POST",{ids:[image.id]}))));
+       tile.append(pic,name,tools,replacement);images.append(tile);
+     }
+   }
+   async function act(fn){if(libraryBusy)return;libraryBusy=true;setNote("Working…");try{await fn();await loadLibrary();setNote("Saved.");}catch(e){setNote(e.message);}finally{libraryBusy=false;const item=libraryItems.find(x=>x.id===editingIdentity);$("identity-use").disabled=!item?.images.length;}}
+   async function multipart(payload,files,onprogress){
+     if(!csrf){const r=await fetch("/api/v1/auth/csrf",{cache:"no-store"});if(!r.ok)throw Error("Session unavailable");csrf=(await r.json()).csrf_token;}
+     const data=new FormData();data.append("payload",JSON.stringify(payload));files.forEach(f=>data.append("images",f));
+     return new Promise((resolve,reject)=>{
+       const xhr=new XMLHttpRequest();activeUpload=xhr;xhr.open("POST","/api/v1/studio/requests/upload");xhr.setRequestHeader("X-CSRF-Token",csrf);
+       xhr.upload.onprogress=e=>{if(e.lengthComputable)onprogress(Math.round(e.loaded/e.total*100));};
+       xhr.onload=()=>{let d;try{d=JSON.parse(xhr.responseText);}catch{d={};}if(xhr.status===201)resolve(d);else{if([401,403].includes(xhr.status))csrf=null;reject(Error(typeof d.detail==="string"?d.detail:"Upload failed ("+xhr.status+")"));}};
+       xhr.onerror=()=>reject(Error("Upload interrupted; refresh library"));xhr.onabort=()=>reject(Error("Upload cancelled; refresh library"));xhr.send(data);
+     }).finally(()=>{activeUpload=null;});
+   }
+   async function uploadFiles(files,replaceId=null){
+     if(libraryBusy||!editingIdentity||!files.length)return;
+     const id=editingIdentity, item=libraryItems.find(x=>x.id===id);
+     if(files.length+item.images.length-(replaceId?1:0)>12||files.some(f=>!f.size||f.size>10*1024**2||!/\.(jpe?g|png|webp)$/i.test(f.name))){setNote("Up to 12 images, 10 MiB each.");return;}
+     libraryBusy=true;cancelUpload=false;$("identity-use").disabled=true;$("identity-cancel-upload").hidden=false;const progress=$("identity-upload-progress");progress.replaceChildren();
+     let done=0,failed=0;
+     try{
+       for(const file of files){
+         if(cancelUpload)break;
+         const row=put("div",file.name+" — Waiting");progress.append(row);
+         try{await multipart({library_action:"upload",identity_id:id,replace_id:replaceId},[file],pct=>row.textContent=file.name+" — "+pct+"%");row.textContent=file.name+" — Saved";done++;}
+         catch(e){row.textContent=file.name+" — "+e.message;failed++;}
+       }
+       await loadLibrary();setNote(done+" saved · "+failed+" failed"+(cancelUpload?" · Remaining cancelled":""));
+     }catch(e){setNote(e.message);}finally{libraryBusy=false;$("identity-cancel-upload").hidden=true;$("identity-files").value="";$("identity-use").disabled=!(libraryItems.find(x=>x.id===editingIdentity)?.images.length);}
+   }
+   $("reference-library-open").onclick=async()=>{if(saving)return;dialog.showModal();try{await loadLibrary();if(selectedIdentity){editingIdentity=selectedIdentity.id;drawLibrary();}}catch(e){setNote(e.message);}};
+   $("identity-close").onclick=()=>dialog.close();
+   $("identity-search").oninput=drawLibrary;
+   $("identity-refresh").onclick=()=>act(async()=>{});
+   $("identity-add").onclick=()=>act(async()=>{const result=await api("/identities","POST",{name:value("identity-new-name")});editingIdentity=result.id;$("identity-new-name").value="";});
+   $("identity-rename").onclick=()=>act(async()=>api("/identities/"+editingIdentity,"PATCH",{name:value("identity-rename-name")}));
+   $("identity-delete").onclick=()=>act(async()=>{await api("/identities/"+editingIdentity,"DELETE");editingIdentity=null;});
+   $("identity-files").onchange=()=>uploadFiles([...$("identity-files").files]);
+   $("identity-cancel-upload").onclick=()=>{cancelUpload=true;activeUpload?.abort();};
+   $("identity-import").onclick=()=>act(async()=>{setNote("Importing and verifying Drive images…");await multipart({library_action:"import",identity_id:editingIdentity,link:value("identity-drive-link")},[],()=>{});$("identity-drive-link").value="";});
+   $("identity-select-all").onclick=()=>images.querySelectorAll("input[data-image]").forEach(x=>x.checked=true);
+   $("identity-deselect-all").onclick=()=>images.querySelectorAll("input[data-image]").forEach(x=>x.checked=false);
+   $("identity-delete-selected").onclick=()=>act(async()=>{const ids=selection();if(!ids.length)throw Error("Select images first");await api("/identities/"+editingIdentity+"/images/delete","POST",{ids});});
+   $("identity-use").onclick=()=>{const item=libraryItems.find(x=>x.id===editingIdentity);if(libraryBusy||!item?.images.length)return;applyChoice(item);dialog.close();};
+ }
+ function outputSelection(){return [...$("output-list").querySelectorAll("input[data-output]:checked")].map(x=>x.value);}
+ async function manageOutput(job,data){
+   const note=$("output-status");try{await api("/requests/"+job+"/outputs/manage","POST",data);await showOutputs(job);}catch(e){note.textContent=e.message;}
+ }
+ async function downloadZip(job){
+   const ids=outputSelection(),note=$("output-status");if(!ids.length){note.textContent="Select clips first.";return;}
+   try{
+     if(!csrf){const r=await fetch("/api/v1/auth/csrf",{cache:"no-store"});if(!r.ok)throw Error("Session unavailable");csrf=(await r.json()).csrf_token;}
+     note.textContent="Preparing ZIP…";$("output-zip").disabled=true;
+     const r=await fetch("/api/v1/studio/requests/"+job+"/outputs/zip",{method:"POST",headers:{"X-CSRF-Token":csrf,"Content-Type":"application/json"},body:JSON.stringify({ids}),credentials:"same-origin"});
+     if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.detail||"ZIP unavailable");}
+     const url=URL.createObjectURL(await r.blob()),a=put("a","Download");a.href=url;a.download="clips-"+job.slice(0,8)+".zip";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);note.textContent="ZIP prepared.";
+   }catch(e){note.textContent=e.message;}finally{$("output-zip").disabled=false;}
+ }
+ if(kind==="extractor"){
+   $("output-select-all").onclick=()=>$("output-list").querySelectorAll("input[data-output]").forEach(x=>x.checked=true);
+   $("output-deselect-all").onclick=()=>$("output-list").querySelectorAll("input[data-output]").forEach(x=>x.checked=false);
+   $("output-delete-selected").onclick=()=>{const ids=outputSelection();if(selected&&ids.length)manageOutput(selected,{action:"delete",ids});else $("output-status").textContent="Select clips first.";};
+   $("output-zip").onclick=()=>{if(selected)downloadZip(selected);};
+ }
  async function showOutputs(job){
    selected=job;const stamp=++seq;extras.delete("review-panel");setView("results");
    $("result-request").value=job;$("person-results").replaceChildren();
-   const list=$("output-list"), video=$("output-preview");
+   const list=$("output-list"), video=$("output-preview");if(kind==="extractor")$("output-controls").hidden=true;
    video.pause();video.removeAttribute("src");video.load();video.hidden=true;list.replaceChildren();$("output-status").textContent="Loading…";
    try{const data=await api("/requests/"+job+"/outputs");if(stamp!==seq)return;
-     $("output-status").textContent=data.outputs.length?"Verified files for "+job.slice(0,8):"No verified outputs available for this request.";
-     for(const file of data.outputs){const row=put("div","");row.className="studio-output";row.append(put("span",file.name+" · "+file.size+" bytes"));
-       const href="/api/v1/studio/requests/"+job+"/outputs/"+encodeURIComponent(file.name),a=put("a","Download");a.href=href;row.append(a);
-       if(file.media_type==="video/mp4")row.append(button("Preview",()=>{video.src=href+"?preview=true";video.hidden=false;}));list.append(row);}
+     const clips=data.outputs.filter(f=>f.media_type==="video/mp4"),known=clips.every(f=>Number.isFinite(f.duration_ms));
+     $("output-status").textContent=data.outputs.length?(kind==="extractor"?(data.identity?data.identity+" · ":"")+clips.length+" clips"+(known&&clips.length?" · "+(clips.reduce((n,f)=>n+f.duration_ms,0)/1000).toFixed(2)+" seconds":"")+" · ":"")+"Verified files for "+job.slice(0,8):"No verified outputs available for this request.";
+     if(kind==="extractor"){$("output-controls").hidden=!clips.length;$("output-delete-selected").disabled=!data.editable;}
+     for(const file of data.outputs){const row=put("div","");row.className="studio-output";const id=file.id||file.name;
+       if(kind==="extractor"&&file.media_type==="video/mp4"){const check=document.createElement("input");check.type="checkbox";check.dataset.output="";check.value=id;check.setAttribute("aria-label","Select "+file.name);row.append(check);}
+       row.append(put("span",file.name+" · "+(file.size/1024**2).toFixed(2)+" MiB"+(Number.isFinite(file.duration_ms)?" · "+(file.duration_ms/1000).toFixed(2)+" s":"")));
+       const href="/api/v1/studio/requests/"+job+"/outputs/"+encodeURIComponent(id),a=put("a","Download");a.href=href;row.append(a);
+       if(file.media_type==="video/mp4"){
+         row.append(button("Preview",()=>{video.src=href+"?preview=true";video.hidden=false;}));
+         if(kind==="extractor"&&data.editable){const name=document.createElement("input");name.value=file.name;name.maxLength=128;name.setAttribute("aria-label","Rename clip");row.append(name,button("Rename",()=>manageOutput(job,{action:"rename",ids:[id],name:name.value})),button("Delete",()=>manageOutput(job,{action:"delete",ids:[id]})));}
+       }list.append(row);}
      if(kind==="analyzer"&&data.outputs.some(f=>f.name==="analysis.json"))await showPeople(job,stamp);
    }catch(err){if(stamp===seq)$("output-status").textContent=err.message;}
  }
@@ -131,7 +239,7 @@
  async function showReview(job){
    const pane=$("review-panel"), rows=$("review-ranges"), note=$("review-status"), approve=$("review-approve");
    selected=null;$("result-request").value="";$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a completed request to inspect its outputs.";
-   extras.add("review-panel");setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
+   extras.add("review-panel");if(kind==="extractor")$("output-controls").hidden=true;setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
    const stamp=++seq;
    try{
      const data=await api("/requests/"+job+"/review");if(stamp!==seq)return;
@@ -167,7 +275,9 @@
  async function refresh(){
    if(refreshing||document.hidden)return;refreshing=true;
    try{const data=await api("/requests?kind="+kind),rows=$("request-rows");rows.replaceChildren();queueState(data.paused);
-     const picker=$("result-request"), prior=picker.value;picker.replaceChildren(new Option("Select a request",""));for(const job of data.requests.filter(j=>j.state==="completed"&&!deleted.has(j.id)))picker.add(new Option(job.id.slice(0,8),job.id));if([...picker.options].some(o=>o.value===prior))picker.value=prior;
+     const picker=$("result-request"), prior=picker.value;let complete=data.requests.filter(j=>j.state==="completed"&&!deleted.has(j.id));
+     if(kind==="extractor"){const filter=$("output-identity-filter"),old=filter.value;filter.replaceChildren(new Option("All identities",""));for(const [id,name] of new Map(complete.filter(j=>j.identity_id).map(j=>[j.identity_id,j.identity_name])).entries())filter.add(new Option(name,id));if([...filter.options].some(o=>o.value===old))filter.value=old;if(filter.value)complete=complete.filter(j=>j.identity_id===filter.value);}
+     picker.replaceChildren(new Option("Select a request",""));for(const job of complete)picker.add(new Option((job.identity_name?job.identity_name+" · ":"")+job.id.slice(0,8),job.id));if([...picker.options].some(o=>o.value===prior))picker.value=prior;
      if(!data.requests.some(item=>!deleted.has(item.id))){const tr=document.createElement("tr"),td=put("td","No requests yet.");td.colSpan=5;tr.append(td);rows.append(tr);}
      for(const job of data.requests.filter(item=>!deleted.has(item.id))){const tr=document.createElement("tr");tr.dataset.requestId=job.id;
        [job.id.slice(0,8),job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
@@ -200,6 +310,7 @@
  function queueState(paused){$("queue-status").textContent=paused?"Paused":"Active";$("queue-pause").disabled=queueBusy||paused;$("queue-resume").disabled=queueBusy||!paused;}
  async function queueCommand(action){if(queueBusy)return;queueBusy=true;$("queue-pause").disabled=$("queue-resume").disabled=true;try{const data=await api("/queue/"+action,"POST");queueBusy=false;queueState(data.paused);status.textContent=data.paused?"Queue paused; active work may finish.":"Queue resumed";}catch(err){status.textContent=err.message;}finally{queueBusy=false;await refresh();}}
  $("queue-pause").onclick=()=>queueCommand("pause");$("queue-resume").onclick=()=>queueCommand("resume");
+ if(kind==="extractor")$("output-identity-filter").onchange=()=>{selected=null;++seq;$("output-list").replaceChildren();$("output-controls").hidden=true;$("output-preview").pause();$("output-preview").hidden=true;$("result-request").value="";refresh();};
  setView("new");
  refresh();const timer=setInterval(refresh,10000);window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
 })();

@@ -46,6 +46,7 @@ class Store:
                 kind TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL,
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
                 progress REAL, message TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS request_identities(job_id TEXT PRIMARY KEY REFERENCES requests(id),identity_id TEXT NOT NULL,label TEXT NOT NULL,slug TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS outputs(
                 job_id TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL,
                 sha256 TEXT NOT NULL, media_type TEXT NOT NULL,
@@ -71,7 +72,7 @@ class Store:
     def create(self,req:JobRequest):
         with self.admission():return self._create(req)
 
-    def _create(self,req:JobRequest):
+    def _create(self,req:JobRequest,identity=None):
         payload=json.dumps(req.model_dump(exclude={"request_id"}),sort_keys=True,separators=(",",":"))
         now=int(time.time())
         with self.connect() as c:
@@ -82,13 +83,15 @@ class Store:
                 old["settings"].setdefault("reference_uploads",[])
                 if new["input"]["source_kind"]=="auto" and old["input"]["source_kind"] in ("video","zip"):
                     old["input"]["source_kind"]="auto"
-                if old!=new: raise HTTPException(409,"Request ID already used with different settings")
+                prior=c.execute("SELECT identity_id,label,slug FROM request_identities WHERE job_id=?",(row["id"],)).fetchone()
+                if old!=new or (tuple(prior) if prior else None)!=identity: raise HTTPException(409,"Request ID already used with different settings")
                 return self.public(row)
             count=c.execute("SELECT count(*) FROM requests WHERE owner=? AND state='awaiting_input'",(self.owner,)).fetchone()[0]
             if count>=500: raise HTTPException(409,"Pending request limit reached")
             jid=uuid4().hex
             c.execute("INSERT INTO requests VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (jid,req.request_id,self.owner,req.settings.kind,payload,"awaiting_input",now,now,None,"Queued for automatic input download"))
+            if identity:c.execute("INSERT INTO request_identities VALUES(?,?,?,?)",(jid,*identity))
             return self.public(c.execute("SELECT * FROM requests WHERE id=?",(jid,)).fetchone())
 
     def public(self,row):
