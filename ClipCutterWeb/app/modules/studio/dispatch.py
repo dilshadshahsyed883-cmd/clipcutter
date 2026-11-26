@@ -5,6 +5,7 @@ Never recreate a lost attempt automatically; the VPS keeps verified inputs.
 """
 import fcntl
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -238,8 +239,11 @@ class Dispatcher:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
                 # Persist intent before any remote side effect. If the remote is missing
                 # after ambiguity, do not silently recreate; require reconciliation.
-                self._phase(jid,"create_intent")
-                remote=self.client.create(a,m)
+                with self.store.admission() if may_start else nullcontext():
+                    if may_start and not may_start():return "paused"
+                    if self.command(jid)=="cancel":return "cancel_pending"
+                    self._phase(jid,"create_intent")
+                    remote=self.client.create(a,m)
             else:remote=self.client.status(a)
             self._validate(remote,row,m)
             state=remote["state"];local=self.store.get(jid)["state"]
@@ -281,8 +285,11 @@ class Dispatcher:
                 if may_start and not may_start():return "paused"
                 with self.store.connect() as c:
                     if not allow_during_intake and self._pending(c):return "intake_pending"
-                self._phase(jid,"start_intent")
-                remote=self.client.start(a)
+                with self.store.admission() if may_start else nullcontext():
+                    if may_start and not may_start():return "paused"
+                    if self.command(jid)=="cancel":return "cancel_pending"
+                    self._phase(jid,"start_intent")
+                    remote=self.client.start(a)
                 self._validate(remote,row,m)
                 state=remote["state"]
             if state in ("queued","running","cancelling"):
