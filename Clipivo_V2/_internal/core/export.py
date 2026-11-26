@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import shutil
@@ -290,9 +291,15 @@ def export_ranges(
         from uuid import uuid4
         if shape and shape.framing != "whole":
             raise ExportError("Strict clip length limits require Whole picture framing. Change Frame or disable clip limits.")
+        minimum=float(limits.get('minimum',2.5)); maximum=float(limits.get('maximum',4.0))
+        if not all(math.isfinite(v) for v in (minimum,maximum)) or not 0<minimum<=maximum:
+            raise ExportError('Invalid clip duration limits.')
+        lo_ms=math.ceil(minimum*1000-1e-8); hi_ms=math.floor(maximum*1000+1e-8)
+        if hi_ms<lo_ms:raise ExportError('No millisecond range satisfies these limits.')
+        if active_filters(filters):raise ExportError('Strict duration limits require filters to be disabled; filtered output duration is not guaranteed.')
         constrained = []
         for clip in enabled:
-            parts = bounded_parts(clip.duration_ms / 1000, limits.get("minimum", 2.5), limits.get("maximum", 4.0))
+            parts = bounded_parts(clip.duration_ms / 1000, lo_ms/1000, hi_ms/1000)
             dropped_seconds += clip.duration_ms / 1000 - sum(b-a for a,b in parts)
             for a,b in parts:
                 constrained.append(replace(clip, id=uuid4().hex, start_ms=clip.start_ms+round(a*1000), end_ms=clip.start_ms+round(b*1000)))
@@ -304,6 +311,8 @@ def export_ranges(
     output_dir.mkdir(parents=True, exist_ok=True)
     if target is not None:
         target = Path(target)
+        if target.resolve()==Path(source).resolve():raise ExportError('Output must not replace the source video.')
+        if target.exists() or target.is_symlink():raise ExportError('Choose a new output filename; existing files are protected.')
         target.parent.mkdir(parents=True, exist_ok=True)
         if not stitched and len(enabled) != 1:
             raise ExportError("A named output file can only be used for one separate clip.")
@@ -311,6 +320,9 @@ def export_ranges(
     logs: list[str] = ([f"Clip limits applied; excluded {dropped_seconds:.3f}s of short remainders."] if limits.get("enabled") else [])
     progress = progress or (lambda *_args: None)
     cancel_event = cancel_event or Event()
+    if limits.get('enabled'):
+        progress(0,1,f'Clip limits applied; excluded {dropped_seconds:.3f}s of short remainders.')
+        log_path.write_text('\n'.join(logs),encoding='utf-8')
     filters = active_filters(filters)
     output_tag = date_tag()
     character_tail = f"_{_safe_output_component(output_character)}" if output_character else ""
@@ -333,7 +345,7 @@ def export_ranges(
                 )
             except ProbeError:
                 pass
-            shape = replace(shape, repeat_cycle=detect_repeat_cycle(source, enabled))
+            shape = replace(shape, repeat_cycle=0 if limits.get('enabled') else detect_repeat_cycle(source, enabled))
             if shape.repeat_cycle:
                 logs.append(f"Source repeats one frame in every {shape.repeat_cycle}; dropping the repeats.")
         if shape.framing != "whole" and all(shape.frame_size):
