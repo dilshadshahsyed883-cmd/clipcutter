@@ -5,6 +5,12 @@ import cv2, numpy as np
 from .storage import root
 VIDEO_EXT={'.mp4','.mkv','.mov','.webm','.avi','.m4v'}
 
+def fingerprint(path):
+    path=Path(path).resolve()
+    stat=path.stat()
+    return hashlib.sha256(f'{path}:{stat.st_size}:{stat.st_mtime_ns}:hist-v1'.encode()).hexdigest()
+
+
 def describe(frame):
     hsv=cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
     hist=cv2.calcHist([hsv],[0,1],None,[16,8],[0,180,0,256]).ravel()
@@ -49,15 +55,22 @@ class Index:
         paths=sorted(p for p in Path(folder).rglob('*') if p.suffix.lower() in VIDEO_EXT and p.is_file());done=0
         for path in paths:
             if cancel():raise InterruptedError('Cancelled')
-            stat=path.stat();key=hashlib.sha256(f'{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:hist-v1'.encode()).hexdigest()
+            key=fingerprint(path)
             with self.connect() as db:old=db.execute('SELECT fingerprint FROM media WHERE path=?',(str(path.resolve()),)).fetchone()
             if not old or old[0]!=key:
                 data=inspect_video(path,cancel)
+                if fingerprint(path)!=key:raise ValueError('Media changed while indexing: '+str(path))
                 with self.connect() as db:db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?)',(str(path.resolve()),key,json.dumps(data)))
             done+=1;progress(done,len(paths))
         return self.all()
     def all(self):
-        with self.connect() as db:return [json.loads(row[0]) for row in db.execute('SELECT payload FROM media ORDER BY path') if Path(json.loads(row[0])['path']).is_file()]
+        result=[]
+        with self.connect() as db:
+            for path,key,payload in db.execute('SELECT path,fingerprint,payload FROM media ORDER BY path'):
+                try:
+                    if fingerprint(path)==key:result.append(json.loads(payload))
+                except OSError:continue
+        return result
     def save(self,media):
         with self.connect() as db:db.execute('UPDATE media SET payload=? WHERE path=?',(json.dumps(media),media['path']))
 
@@ -69,7 +82,7 @@ def scene_candidates(scene,reference,media,weights=None,used=None,minimum=.70,al
         if video['path']==reference['path']:continue
         for n,s in enumerate(video['scenes']):
             available=s['end']-s['start']
-            if available<=0 or (not allow_short and available+.001<target_len):continue
+            if available<=0 or (not allow_short and available+1e-6<target_len):continue
             # Explicitly labelled people are a hard eligibility constraint.
             if target_people and (not target_people.issubset(set(scene.get('confirmed_people',[]))) or not target_people.issubset(set(s.get('confirmed_people',[])))):continue
             scores={'duration':min(target_len/available,1),'aspect':min((video['width']/video['height'])/(reference['width']/reference['height']),(reference['width']/reference['height'])/(video['width']/video['height']))}
@@ -114,28 +127,35 @@ def fill_same_people(scene,reference,media,minimum_score=.70,min_speed=.67,weigh
     if not scene.get('people') or not .67 <= min_speed <= 1:
         return None
     duration = scene['end']-scene['start']
-    lo = clip_minimum if clip_minimum is not None else .000001
-    hi = clip_maximum if clip_maximum is not None else duration
-    if not 0 < lo <= hi or duration < lo:
+    fps = float(reference.get('fps') or 1e6)
+    if not math.isfinite(fps) or fps<=0:
+        return None
+    total=round(duration*fps)
+    if abs(total/fps-duration)>1e-6:
+        return None
+    lo = math.ceil(clip_minimum*fps-1e-8) if clip_minimum is not None else 1
+    hi = math.floor(clip_maximum*fps+1e-8) if clip_maximum is not None else total
+    if not 0 < lo <= hi or total < lo:
         return None
     candidates = scene_candidates(scene,reference,media,weights,used,allow_short=True)
     candidates = [c for c in candidates if c['score'] >= minimum_score]
     # Capacity-first ordering prevents a short, high-ranked clip from stranding a gap.
     for floor_speed in (1.,min_speed):
-        eligible = [(c,min(hi,(c['end']-c['start'])/floor_speed)) for c in candidates]
+        eligible = [(c,min(hi,math.floor((c['end']-c['start'])*fps/floor_speed+1e-8))) for c in candidates]
         eligible = sorted((x for x in eligible if x[1] >= lo),key=lambda x:(-x[1],-x[0]['score'],x[0]['path'],x[0]['scene']))
         for count in range(1,len(eligible)+1):
             chosen = eligible[:count]
-            if count*lo > duration+1e-8 or sum(cap for _,cap in chosen) < duration-1e-8:
+            if count*lo > total or sum(cap for _,cap in chosen) < total:
                 continue
-            remaining = duration
+            remaining = total
             pieces = []
             for i,(c,cap) in enumerate(chosen):
-                target = min(cap,remaining-(count-i-1)*lo)
+                frames = min(cap,remaining-(count-i-1)*lo)
+                target = frames/fps
                 speed = min(1.,(c['end']-c['start'])/target)
                 pieces.append(dict(c,trim_start=c['start'],target_duration=target,speed=speed))
-                remaining -= target
-            if abs(remaining) > 1e-7:
+                remaining -= frames
+            if remaining:
                 continue
             return dict(pieces[0],pieces=pieces,gap_fill=True,
                         score=round(sum(p['score']*p['target_duration'] for p in pieces)/duration,4))
