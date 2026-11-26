@@ -28,3 +28,16 @@ Local validation: the supplied 176,792,439-byte archive passed exact model
 size/SHA256 checks using the staging helper. Unexpected ZIP paths and insecure
 URL schemes/embedded credentials were rejected; failed staging was cleaned.
 Both workflow YAML files parsed successfully. Docker and CUDA were not run.
+
+## Superseding owner-directed educational build exception
+
+Owner explicitly requested the model-inclusive private educational image build
+and assumes licensing responsibility. For this build, vendor written
+clarification is not a blocking prerequisite; no third-party packaging rights
+or commercial license are represented as verified. The manual workflow requires
+an exact approved current-main SHA and private educational confirmation. The
+builder uses `CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED=1` instead of representing
+redistribution rights as verified. Private package verification, pinned model
+hashes, all smoke gates, immutable tags and digest verification remain required.
+This supersedes historical build-disabled statements for this testing build.
+No Salad start, paid GPU usage, Concat changes, EXE or VPS deployment.

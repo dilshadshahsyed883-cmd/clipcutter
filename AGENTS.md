@@ -45,3 +45,14 @@ The owner's latest instruction supersedes the earlier ZIP destination rule: **th
 ## Owner-approved GPU build hold (latest instruction)
 
 No GPU Docker build or trigger until owner explicitly approves finalization. GPU workflow is manual-only with its build job disabled during the hold. GPU source belongs in ClipCutterGPU/ on main; Web source belongs in ClipCutterWeb/ on main. Source changes may be reviewed and merged independently without building. Do not enable build until owner approval. Follow docs/GPU_FINAL_IMAGE_CONTRACT.md. This hold supersedes general permission to build GPU candidates, without changing the permanent no-EXE rule.
+
+## Latest owner instruction — private educational image build
+
+The owner explicitly directs building the model-inclusive image for private,
+non-commercial educational testing and assumes licensing responsibility. This
+supersedes the earlier build hold and the requirement to wait for written vendor
+clarification for this testing build. It does not establish verified model
+redistribution rights or a commercial license. Enable only manual exact-main-SHA
+builds with explicit private educational approval; keep package-private checks,
+model hashes, all smoke tests, immutable tags and digest verification. No EXE,
+Concat changes, Salad starts or VPS deployment are authorized by this exception.

@@ -23,3 +23,16 @@ This script does not publish by itself. The reviewed main-only workflow handles 
 
 ## Private non-commercial research testing only
 Owner approved a dedicated private testing image; never publish packaged models into the existing candidate package. Before building, verify dedicated GHCR package metadata is private using verify-private-package.py and a secure package-read credential. Verify again immediately before and after push. New package must first be established with a model-free seed, private visibility independently confirmed, and access restricted to approved accounts. Do not rely on repository visibility, which is public. Use exact digest for Salad, a separate read-only registry credential and separate worker token. Private visibility does not grant rights to model weights. No production or monetized use on research-only terms. Actual authorization and files, private package creation, CI model supply, transport and acceptance are still outstanding. Build remains disabled.
+
+## Superseding owner-directed educational build exception
+
+Owner explicitly requested the model-inclusive private educational image build
+and assumes licensing responsibility. For this build, vendor written
+clarification is not a blocking prerequisite; no third-party packaging rights
+or commercial license are represented as verified. The manual workflow requires
+an exact approved current-main SHA and private educational confirmation. The
+builder uses `CLIPCUTTER_PRIVATE_EDUCATIONAL_APPROVED=1` instead of representing
+redistribution rights as verified. Private package verification, pinned model
+hashes, all smoke gates, immutable tags and digest verification remain required.
+This supersedes historical build-disabled statements for this testing build.
+No Salad start, paid GPU usage, Concat changes, EXE or VPS deployment.
