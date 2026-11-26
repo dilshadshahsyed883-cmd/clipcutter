@@ -82,7 +82,7 @@ class Lifecycle:
             unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new') LIMIT 1").fetchone())
         return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
             "busy":unresolved or any(s in ("processing","delivering") for s in states),
-            "empty":all(s in ("completed","failed","cancelled","review") for s in states) and not unresolved}
+            "empty":all(s in ("completed","failed","cancelled","review","batch_expanded") for s in states) and not unresolved}
     def _post(self,r,action,i=None):
         self._save(r,action+"_requested")
         try:self.api.mutate(action,i)
