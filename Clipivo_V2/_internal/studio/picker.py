@@ -46,7 +46,7 @@ def constrain_ranges(ranges,minimum,maximum):
     return out,discarded
 
 def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
-                      cooldown=2, allow_repeats=True, group_weights=None):
+                      cooldown=2, allow_repeats=True, group_weights=None, cancel=lambda:False):
     if not all(math.isfinite(v) for v in (minimum, maximum, reference['duration'])) or not 0 < minimum <= maximum:
         raise ValueError('Clip durations must satisfy 0 < minimum ≤ maximum')
     scale = float(reference.get('fps') or 1e6)
@@ -60,8 +60,11 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
         raise ValueError('Invalid timeline or clip limits')
     if cooldown < 0:
         raise ValueError('Cooldown must be nonnegative')
+    def check_cancel():
+        if cancel(): raise InterruptedError('Clip selection cancelled')
     sources = []
     for m in sorted(media, key=lambda x: x['path']):
+        check_cancel()
         for i, scene in enumerate(m['scenes']):
             available = math.floor((scene['end']-scene['start'])*scale+1e-7)
             group = keyword(m['path'])
@@ -74,7 +77,14 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
                     group=group, weight=weight, used=max(0,int(m.get('used_count',0)))))
     if not sources:
         raise ValueError('No eligible footage long enough for the minimum clip length')
-    caps = sorted((s['cap'] for s in sources), reverse=True)
+    # No reuse means no repeated source FILE, even if it has several indexed scenes.
+    from pathlib import Path
+    for s in sources:
+        s['source_key'] = str(Path(s['path']).resolve())
+    file_caps = {}
+    for s in sources:
+        file_caps[s['source_key']] = max(file_caps.get(s['source_key'],0),s['cap'])
+    caps = sorted((s['cap'] for s in sources) if allow_repeats else file_caps.values(), reverse=True)
     prefix = [0]
     for c in caps:
         prefix.append(prefix[-1]+c)
@@ -91,17 +101,20 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
     uses = [0]*len(sources)
     recent, rows, warnings = [], [], []
     at = 0
+    used_files = set()
     for i in range(count):
+        check_cancel()
         remaining, left = total-at, count-i-1
-        available_ids = [j for j in range(len(sources)) if allow_repeats or not uses[j]]
-        ordered = sorted(available_ids, key=lambda j: -sources[j]['cap'])
+        available_ids = [j for j in range(len(sources)) if allow_repeats or sources[j]['source_key'] not in used_files]
+        ordered = sorted((k for k in file_caps if k not in used_files),key=lambda k:(-file_caps[k],k)) if not allow_repeats else []
         top = ordered[:left]
-        future = sum(sources[j]['cap'] for j in top)
+        future = sum(file_caps[k] for k in top)
         top_set = set(top)
-        spare = sources[ordered[left]]['cap'] if left < len(ordered) else 0
+        spare = file_caps[ordered[left]] if left < len(ordered) else 0
         bounds = {}
         for j in available_ids:
-            capacity = left*caps[0] if allow_repeats else future-(sources[j]['cap']-spare if j in top_set else 0)
+            key = sources[j]['source_key']
+            capacity = left*caps[0] if allow_repeats else future-(file_caps[key]-spare if key in top_set else 0)
             if not allow_repeats and len(ordered)-1 < left:
                 continue
             lower = max(lo, remaining-capacity)
@@ -130,6 +143,7 @@ def build_picked_plan(reference, media, minimum=2.5, maximum=4., seed=1,
         rows.append(dict(original=original,selected=selected,candidates=[],approved=False,manual_review=True,identity_required=[]))
         at += duration
         uses[j] += 1
+        used_files.add(s['source_key'])
         recent.append(s['path'])
     # Retain actual reference scenes; the new timeline is represented by rows only.
     return dict(version=1,reference=copy.deepcopy(reference),rows=rows,mode='concat_picker',
