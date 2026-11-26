@@ -182,6 +182,22 @@ class Store:
                 (state,message,progress,int(time.time()),jid,self.owner))
             return self.public(self.row(c,jid))
 
+    def gpu_upload_progress(self,jid,acknowledged,total):
+        """Persist confirmed GPU bytes without changing the verified-intake state."""
+        if type(acknowledged) is not int or type(total) is not int or not 0<=acknowledged<=total or total<=0:
+            raise ValueError("Invalid GPU upload progress")
+        progress=100*acknowledged//total
+        message=f"GPU uploading: {acknowledged:,} / {total:,} bytes acknowledged"
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            if self.row(c,jid)["state"]!="ready":
+                raise HTTPException(409,"Stale GPU upload state")
+            attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
+            if not attempt or attempt["phase"]!="staging":
+                raise HTTPException(409,"Stale GPU upload attempt")
+            c.execute("UPDATE requests SET progress=?,message=?,updated_at=? WHERE id=? AND owner=?",
+                      (progress,message,int(time.time()),jid,self.owner))
+
     def intake_progress(self,jid,progress,message):
         with self.connect() as c:
             c.execute("BEGIN IMMEDIATE")
