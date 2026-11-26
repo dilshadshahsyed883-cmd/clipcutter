@@ -79,7 +79,7 @@ class Lifecycle:
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
-            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new') LIMIT 1").fetchone())
+            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new','cancelled_clean') LIMIT 1").fetchone())
         return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
             "busy":unresolved or any(s in ("processing","delivering") for s in states),
             "empty":not eligible and all(s in ("completed","failed","cancelled","deleted","review","batch_expanded","ready") for s in states) and not unresolved}
@@ -141,7 +141,9 @@ class Lifecycle:
             stage=inst.get("state")
             if stage=="running" and inst.get("ready") is True:
                 caps=self.worker.capabilities() # exact worker source + protocol + authenticated health
-                r.update(start_intent=False,attempts=0,accepted=True,progress=100)
+                r.update(start_intent=False,attempts=0,accepted=True,progress=100,
+                         pipeline_version=caps.get("pipeline_version"),concurrency=caps.get("concurrency",1),
+                         worker_counts={k:caps.get(k) for k in ("active_renders","staging","undelivered")})
                 r.pop("retry_after",None)
                 if not zero_metrics(caps) or work["busy"]:return done("worker_busy")
                 if manual=="stop" or (self.cfg.auto_start and work["empty"]):
