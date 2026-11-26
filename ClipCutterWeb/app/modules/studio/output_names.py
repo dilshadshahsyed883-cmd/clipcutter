@@ -49,6 +49,7 @@ def alias_for(s,jid,name):
 
 def visible(s,jid):
     init(s);outputs=s.output_list(jid)
+    if not outputs:return {"outputs":[]}
     with s.connect() as c:
         r=c.execute("SELECT label,identity_id FROM request_identities WHERE job_id=?",(jid,)).fetchone()
         aliases={x["original"]:dict(x) for x in c.execute("SELECT * FROM output_names WHERE job_id=?",(jid,))}
@@ -96,7 +97,7 @@ def make_zip(s,jid,ids):
     if any(i not in lookup for i in ids):raise HTTPException(404,"Output not found")
     total=sum(lookup[i]["size"] for i in ids)
     root=safe_dir(s.root/"output-zips")
-    if total>20*1024**3 or shutil.disk_usage(root).free-RESERVE<total+1024**2:raise HTTPException(507,"ZIP exceeds storage budget")
+    if total>2*1024**3 or shutil.disk_usage(root).free-RESERVE<total+1024**2:raise HTTPException(507,"ZIP exceeds storage budget")
     fd,raw=tempfile.mkstemp(suffix=".zip",dir=root);os.close(fd);p=Path(raw)
     try:
         with zipfile.ZipFile(p,"w",compression=zipfile.ZIP_STORED,allowZip64=True) as z:

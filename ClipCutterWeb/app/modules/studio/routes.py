@@ -69,7 +69,13 @@ def identity_request(data:lib.IdentityRequest,s:Store=Depends(store)):return lib
 
 @router.get("/requests")
 def listing(kind:Literal["extractor","analyzer"],s:Store=Depends(store)):
-    return {"requests":s.list(kind),"paused":Control(s).snapshot()["paused"]}
+    rows=s.list(kind)
+    with s.connect() as c:
+        snapshots={r["job_id"]:dict(r) for r in c.execute("SELECT job_id,identity_id,label FROM request_identities")}
+    for row in rows:
+        if row["id"] in snapshots:
+            x=snapshots[row["id"]];row.update(identity_id=x["identity_id"],identity_name=x["label"])
+    return {"requests":rows,"paused":Control(s).snapshot()["paused"]}
 
 @router.post("/queue/{action}",dependencies=[Depends(require_csrf)])
 def queue_action(action:Literal["pause","resume"],s:Store=Depends(store)):

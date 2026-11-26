@@ -147,6 +147,8 @@ def add_files(s,i,images,replace_id=None):
 
 def upload_action(s,data,images):
     i=data.get("identity_id")
+    if not isinstance(i,str) or not re.fullmatch(r"[a-f0-9]{32}",i):raise HTTPException(422,"Invalid identity ID")
+    if data.get("replace_id") is not None and (not isinstance(data["replace_id"],str) or not re.fullmatch(r"[a-f0-9]{32}",data["replace_id"])):raise HTTPException(422,"Invalid replacement ID")
     if data["library_action"]=="upload":return add_files(s,i,images,data.get("replace_id"))
     if data["library_action"]!="import" or images:raise HTTPException(422,"Invalid library action")
     try:link=drive_link(data.get("link"))
@@ -171,7 +173,7 @@ def create_request(s,data):
             row=identity(c,data.identity_id);snapshot=(row["id"],row["name"],row["slug"])
             rows=c.execute("SELECT * FROM identity_images WHERE identity_id=? AND deleted=0 ORDER BY rowid",(row["id"],)).fetchall()
         if not rows:raise HTTPException(422,"Identity has no images")
-        if data.request.get("settings",{}).get("kind")!="extractor":raise HTTPException(422,"Identity library is for Clip Extractor")
+        if not isinstance(data.request.get("settings"),dict) or data.request["settings"].get("kind")!="extractor":raise HTTPException(422,"Identity library is for Clip Extractor")
         files=[]
         for r in rows:
             p=checked(root,r);f=stack.enter_context(p.open("rb"))
