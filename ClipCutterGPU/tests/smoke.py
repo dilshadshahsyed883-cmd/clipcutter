@@ -22,6 +22,10 @@ def main():
         assert actual==wanted, (actual-wanted,wanted-actual)
         for rel in actual:
             assert hashlib.sha256((installed/rel).read_bytes()).digest()==hashlib.sha256((source/rel).read_bytes()).digest(),str(rel)
+    import unittest
+    suite=unittest.defaultTestLoader.loadTestsFromName("tests.test_model_setup")
+    result=unittest.TextTestRunner().run(suite)
+    assert result.wasSuccessful(), "Model provisioning tests failed"
     for ms in range(0,15001,37):
         parts=bounded_parts(ms/1000,2.5,4)
         assert all(2500<=round((b-a)*1000)<=4000 for a,b in parts)

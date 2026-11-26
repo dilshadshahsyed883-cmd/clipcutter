@@ -1,4 +1,4 @@
-"""GPU runtime verification; no network or automatic model downloads."""
+"""GPU runtime verification; startup provisioning is explicit and digest-pinned."""
 import hashlib
 import os
 from pathlib import Path
@@ -28,6 +28,8 @@ def warmup():
     import numpy as np
     import onnxruntime as ort
     import subprocess
+    from .model_setup import provision
+    provision()
     root=require_models()
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         raise RuntimeError("CUDA execution provider unavailable")

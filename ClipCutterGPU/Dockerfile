@@ -19,7 +19,7 @@ COPY tests ./tests
 RUN pip check && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q hevc_nvenc
 RUN python -m compileall -q worker && python -c "import av,cv2,numpy,onnxruntime,pydantic; from worker.job import Staged" \
     && groupadd --gid 10001 clipworker && useradd --uid 10001 --gid 10001 --no-create-home clipworker \
-    && mkdir /data /models && chown clipworker:clipworker /data
+    && mkdir /data /models && chown clipworker:clipworker /data /models && chmod 0700 /models
 USER 10001:10001
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready',timeout=3)"
