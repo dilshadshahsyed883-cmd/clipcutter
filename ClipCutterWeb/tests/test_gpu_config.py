@@ -27,7 +27,7 @@ class GPUContractTests(unittest.TestCase):
             self.assertEqual(req.url.host,"api.salad.com")
             if req.url.path.endswith("/instances"):
                 return httpx.Response(200,json={"instances":[{"id":"test","state":"downloading","ready":False,"pulling_progress":.30}]})
-            return httpx.Response(200,json={"current_state":{"status":"running"},"replicas":1,"autostart_policy":False,"secret":key})
+            return httpx.Response(200,json={"current_state":{"status":"running"},"replicas":1,"autostart_policy":False,"scheduled-scaling-enabled":True,"scaling-actions":[],"secret":key})
         client=httpx.Client(transport=httpx.MockTransport(response),follow_redirects=False)
         with patch("app.modules.studio.gpu.httpx.Client",return_value=client):
             result=read_status(cfg,key)
