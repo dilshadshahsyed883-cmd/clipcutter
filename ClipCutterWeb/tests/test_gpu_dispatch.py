@@ -41,9 +41,12 @@ class Fake:
         result={"state":"completed","source_sha256":sha(VIDEO),"artifacts":[{"name":"analysis.json","size":len(OUT),"sha256":sha(OUT),"media_type":"application/json"}]}
         self.remote.update(state="completed",result=result,result_sha256=sha(canonical(result)))
     def fetch(self,a,n,offset,length):return OUT[offset:offset+length]
+    def cancel(self,a):
+        self.remote.update(state="cancelled",error="Cancelled")
+        return self.remote
     def purge(self,a,digest):
-        assert digest==self.remote["result_sha256"]
-        self.purges+=1;return self.remote
+        assert digest==("discard-failed" if self.remote["state"] in ("failed","cancelled") else self.remote["result_sha256"])
+        self.purges+=1;self.remote["purged"]=True;return self.remote
 
 class DispatchTests(unittest.TestCase):
     def setUp(self):
@@ -119,6 +122,51 @@ class DispatchTests(unittest.TestCase):
         with patch("app.modules.studio.dispatch.RESERVE",0):
             self.assertEqual(self.dispatch.tick(self.jid),"delivering")
         self.assertEqual(self.store.get(self.jid)["progress"],100)
+
+    def test_preload_at_capacity_then_start(self):
+        with patch.object(self.client,"capabilities",return_value={"active_renders":2,"concurrency":2,"pipeline_version":1}):
+            self.assertEqual(self.dispatch.tick(self.jid,render_limit=2),"staging")
+            self.assertEqual(self.dispatch.tick(self.jid,render_limit=2),"preloaded")
+            self.assertEqual(self.client.starts,0)
+        with patch.object(self.client,"capabilities",return_value={"active_renders":1,"concurrency":2,"pipeline_version":1}):
+            self.assertEqual(self.dispatch.tick(self.jid,render_limit=2),"running")
+        self.assertEqual(self.client.starts,1)
+
+    def test_parallel_requires_capability(self):
+        with self.assertRaisesRegex(DispatchError,"capacity mismatch"):
+            self.dispatch.tick(self.jid,render_limit=2)
+        self.assertEqual(self.client.creates,0)
+
+    def test_observe_then_independent_delivery(self):
+        self.dispatch.tick(self.jid);self.dispatch.tick(self.jid);self.client.finish()
+        self.assertEqual(self.dispatch.tick(self.jid,observe_only=True),"output_ready")
+        self.assertEqual(self.store.get(self.jid)["state"],"processing")
+        with patch("app.modules.studio.dispatch.RESERVE",0):
+            self.assertEqual(self.dispatch.tick(self.jid),"delivering")
+            self.assertEqual(self.dispatch.tick(self.jid),"published")
+        self.assertEqual(self.dispatch.tick(self.jid),"acknowledged")
+
+    def test_cancel_staging_retains_verified_inputs(self):
+        self.dispatch.tick(self.jid)
+        self.store.gpu_command(self.jid,"cancel")
+        self.assertEqual(self.dispatch.tick(self.jid,allow_start=False,observe_only=True),"cancelled_clean")
+        self.assertEqual(self.store.get(self.jid)["state"],"cancelled")
+        self.assertEqual(self.client.starts,0)
+        self.assertEqual(self.client.purges,1)
+        self.assertTrue((self.store.root/"inputs"/self.jid/"source-0001.mp4").is_file())
+
+    def test_confirmed_failure_retry_without_redownload(self):
+        self.dispatch.tick(self.jid);self.dispatch.tick(self.jid)
+        old=self.dispatch._row(self.jid)["attempt_id"]
+        self.client.remote.update(state="failed",error="test GPU failure")
+        self.assertEqual(self.dispatch.tick(self.jid),"failed_clean")
+        self.assertEqual(self.store.get(self.jid)["state"],"failed")
+        self.store.gpu_command(self.jid,"retry")
+        self.assertEqual(self.dispatch.tick(self.jid,allow_start=False,observe_only=True),"retry_queued")
+        self.assertNotEqual(self.dispatch._row(self.jid)["attempt_id"],old)
+        self.assertEqual(self.store.get(self.jid)["state"],"ready")
+        self.assertEqual(self.dispatch.tick(self.jid),"staging")
+        self.assertEqual(self.client.creates,2)
 
     def test_all_intake_barrier(self):
         self.store.create(request("b"*32))
