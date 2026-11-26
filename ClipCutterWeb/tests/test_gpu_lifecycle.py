@@ -47,6 +47,31 @@ class Tests(unittest.TestCase):
             self.store.transition(jid,"awaiting_input","staging","intake")
             self.store.transition(jid,"staging","ready","verified")
         return jid
+    def test_salad_hyphenated_scaling_field_allows_ready_dispatch(self):
+        self.job()
+        self.api.state="running"
+        self.api.item.update(state="running",ready=True)
+        group=self.api.group()
+        group.pop("scheduled_scaling_enabled")
+        group["scheduled-scaling-enabled"]=False
+        with patch.object(self.api,"group",return_value=group):
+            self.assertEqual(self.tick(),"ready")
+        self.assertEqual(self.api.posts,[])
+
+    def test_scaling_unknown_enabled_or_conflicting_blocks(self):
+        self.job()
+        self.api.state="running"
+        self.api.item.update(state="running",ready=True)
+        group=self.api.group()
+        group.pop("scheduled_scaling_enabled")
+        for fields in ({}, {"scheduled-scaling-enabled":True},
+                       {"scheduled-scaling-enabled":None},
+                       {"scheduled-scaling-enabled":0},
+                       {"scheduled-scaling-enabled":False,"scheduled_scaling_enabled":True}):
+            with self.subTest(fields=fields), patch.object(self.api,"group",return_value={**group,**fields}):
+                self.assertEqual(self.tick(),"dedicated_group_or_image_mismatch")
+        self.assertEqual(self.api.posts,[])
+
     def test_intake_barrier_and_start_journal(self):
         self.job(ready=True);self.job("b"*32,ready=False)
         self.assertEqual(self.tick(),"waiting_for_drive_or_reconciliation")
