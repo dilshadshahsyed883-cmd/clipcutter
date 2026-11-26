@@ -154,7 +154,7 @@ class Dispatcher:
                 self.client.capabilities();self.prepare(jid);row=self._row(jid)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
-            if row["phase"] in ("review","acknowledged","failed","cancelled"):return row["phase"]
+            if row["phase"] in ("review_ready","acknowledged","failed","cancelled"):return row["phase"]
             caps=self.client.capabilities()
             a=row["attempt_id"];m=json.loads(row["manifest"])
             if row["phase"]=="new":
@@ -215,12 +215,15 @@ class Dispatcher:
             result.get("source_sha256")!=m["job"]["source_sha256"]):raise DispatchError("Invalid result manifest")
         local=self.store.get(jid)["state"]
         if m["action"]=="scan":
-            if result.get("state") not in ("review","no_match"):raise DispatchError("Unexpected scan state")
-            if local=="ready":self.store.transition(jid,"ready","processing","GPU scan completed",100);local="processing"
-            if local=="processing":self.store.transition(jid,"processing","review","Scan received; explicit range review required",100)
-            self._phase(jid,"review",digest,result)
-            # Retain remote data until explicit review/ack workflow; no automatic export.
-            return "review"
+            from .review import record_scan,confirm_scan
+            record_scan(self.store,jid,row,m,result,digest)
+            # The full scan result is durable on VPS before remote deletion.
+            # Repeat acknowledgement safely if its response was lost.
+            ack=self.client.purge(row["attempt_id"],digest)
+            if not isinstance(ack,dict) or ack.get("attempt_id")!=row["attempt_id"] or ack.get("purged") is not True:
+                raise DispatchError("Scan acknowledgement unconfirmed")
+            confirm_scan(self.store,jid,row["attempt_id"],digest)
+            return "review_ready"
         if result.get("state")!="completed":raise DispatchError("Unexpected output state")
         items=result.get("artifacts")
         if not isinstance(items,list) or not 1<=len(items)<=1000:raise DispatchError("Invalid artifact list")

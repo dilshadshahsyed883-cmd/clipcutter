@@ -1,0 +1,5 @@
+# Reference scan review and export
+
+A verified scan is durably recorded before remote purge. Only confirmed acknowledgement enables approval; approved ranges are explicitly submitted with the scan digest, validated against duration and non-overlap, and source/reference hashes are rechecked. The previous attempt and approval remain in history. A fresh export attempt carries approved-review.json and unchanged settings. Review-only jobs no longer consume GPU idle time after acknowledgement; the controller can stop an otherwise empty GPU and restart after approval. Owner-scoped review GET/POST and CSRF protection; editable start/end times in Studio.
+
+Source-level integration only; live model/GPU acceptance pending. No automatic export without explicit approval. Visual source preview during review is not implemented. Batch ZIP/folder fan-out, analyzer reference profiles, Drive output delivery, running/staged cancellation/retry reconciliation, authorized model supply, real GPU acceptance and deployment still pending.

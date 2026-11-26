@@ -47,8 +47,12 @@
 <p class="studio-note">Only recorded requests and actual backend states are shown. No simulated progress.</p>
 <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
 </section>
+<section class="content-card studio-card" id="review-panel" hidden>
+<h2>Review scan ranges</h2><p id="review-status" role="status"></p><div id="review-ranges"></div>
+<div class="studio-actions"><button type="button" id="review-add" class="studio-secondary">Add range</button><button type="button" id="review-approve" disabled>Approve export</button></div>
+</section>
 <section class="content-card studio-card">
 <h2>Verified outputs</h2><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 <div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js"></script>
+</div><script defer src="/static/studio.js?v=20261126-review-1"></script>
