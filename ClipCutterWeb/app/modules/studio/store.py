@@ -104,7 +104,14 @@ class Store:
     def list(self,kind):
         with self.connect() as c:
             rows=c.execute("SELECT * FROM requests WHERE owner=? AND kind=? AND state!='deleted' ORDER BY created_at DESC,id DESC LIMIT 200",(self.owner,kind)).fetchall()
-            return [self.public(r) for r in rows]
+            result=[self.public(r) for r in rows]
+            table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
+            for item in result:
+                a=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(item["id"],)).fetchone() if table else None
+                cmd=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(item["id"],)).fetchone()
+                item["gpu_phase"]=a["phase"] if a else None
+                item["gpu_command"]=cmd["action"] if cmd else None
+            return result
 
     def row(self,c,jid):
         if not re.fullmatch(r"[a-f0-9]{32}",jid): raise HTTPException(404,"Request not found")
@@ -158,9 +165,11 @@ class Store:
         with self.admission(),self.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row=self.row(c,jid)
-            if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone():
-                raise HTTPException(409,"No GPU attempt")
-            attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
+            table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
+            attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone() if table else None
+            if action=="cancel" and row["state"]=="ready" and not attempt:
+                c.execute("UPDATE requests SET state='cancelled',message='Cancelled before GPU dispatch; verified inputs retained',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
+                return {"accepted":True,"action":action}
             if action=="retry":
                 if row["state"]!="failed" or not attempt or attempt["phase"]!="failed":
                     raise HTTPException(409,"Retry requires a confirmed failed GPU attempt")
