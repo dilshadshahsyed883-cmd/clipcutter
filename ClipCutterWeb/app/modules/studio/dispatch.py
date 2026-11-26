@@ -141,7 +141,7 @@ class Dispatcher:
             if c.execute("SELECT 1 FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone():return
             c.execute("INSERT INTO gpu_attempts VALUES (?,?,?,?,?,?,?,NULL,NULL)",
                       (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"new",self.client.expected_sha,self.client.origin))
-    def tick(self,jid):
+    def tick(self,jid,*,allow_start=True):
         if not ID.fullmatch(jid):raise DispatchError("Invalid job id")
         locks=safe_dir(self.store.root/"dispatch-locks")
         # One owner-wide dispatch operation at a time, including across processes.
@@ -150,6 +150,7 @@ class Dispatcher:
             except BlockingIOError:return "busy"
             row=self._row(jid)
             if not row:
+                if not allow_start:return "paused"
                 self.client.capabilities();self.prepare(jid);row=self._row(jid)
             if (row["gateway"],row["worker_sha"])!=(self.client.origin,self.client.expected_sha):
                 raise DispatchError("Worker configuration changed; reconcile recorded attempt")
@@ -157,6 +158,7 @@ class Dispatcher:
             caps=self.client.capabilities()
             a=row["attempt_id"];m=json.loads(row["manifest"])
             if row["phase"]=="new":
+                if not allow_start:return "paused"
                 with self.store.connect() as c:
                     if self._pending(c):return "intake_pending"
                 # Persist intent before any remote side effect. If the remote is missing
@@ -170,6 +172,7 @@ class Dispatcher:
                 if row["phase"] in ("start_intent","processing","delivering","published"):
                     raise DispatchError("Remote reverted to staging; reconcile")
                 self._phase(jid,"staging")
+                if not allow_start:return "paused"
                 with self.store.connect() as c:
                     if self._pending(c):return "intake_pending"
                 root=safe_dir(self.store.root/"inputs"/jid);mapping=json.loads(row["mapping"])

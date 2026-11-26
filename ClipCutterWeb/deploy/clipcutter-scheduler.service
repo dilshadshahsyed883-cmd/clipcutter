@@ -1,0 +1,20 @@
+[Unit]
+Description=ClipCutter dedicated GPU scheduler (explicit operator activation only)
+After=network.target clipcutter-web.service
+
+[Service]
+Type=simple
+User=clipcutterweb
+Group=clipcutterweb
+WorkingDirectory=/srv/clipcutter-web/current
+EnvironmentFile=/etc/clipcutter-web/clipcutter-web.env
+ExecStart=/srv/clipcutter-web/current/.venv/bin/python -m app.modules.studio.scheduler
+Restart=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clipcutter-web
+
+# No Install section: deployment helper must never enable or start this service.
