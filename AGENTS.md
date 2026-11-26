@@ -37,3 +37,9 @@ Owner instruction recorded on 26 November 2026:
 ## Active development version
 
 The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2.3` is immutable. See `docs/PLAN_2_3_1.md`. Preserve original extractor behavior and explicit review; no builds.
+
+
+
+## Mandatory delivery clarification — 26 November 2026
+
+The owner observed `Clipivo_V2_3_Windows.zip` in Windows Downloads and explicitly rejected that destination. **Never deliver future PC-testing ZIPs via a browser ZIP download link or instructions that first save the ZIP to Downloads.** Supply a PowerShell command or setup script that creates/downloads the ZIP directly at `%LOCALAPPDATA%\ClipivoV2\packages\Clipivo_V2_3_Windows.zip`, and extracts the active application under `%LOCALAPPDATA%\ClipivoV2\app\Clipivo_V2\`. Temporary download/extraction files must also remain under the AppData setup area. A setup script itself may be downloaded separately; the ZIP must not be. Use explicit absolute AppData paths for all archive operations; verify destination and archive structure before launching. Do not silently fall back to Downloads or overwrite/delete the user's existing Downloads copy. This rule applies to every future source testing release, including 2.3.1 and successors. No EXE build or GitHub Actions workflow is authorized.
