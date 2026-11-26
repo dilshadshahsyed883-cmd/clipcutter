@@ -20,6 +20,7 @@ JOB_LIMIT = 20 * 1024**3
 RESERVE = 5_000_000_000
 TYPES = {"video": {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"},
          "image": {".jpg", ".jpeg", ".png", ".webp"}, "zip": {".zip"}}
+TYPES["source"]=TYPES["video"]|TYPES["zip"]
 
 class Retryable(RuntimeError):
     pass
@@ -174,7 +175,7 @@ def stage(store, jid, bridge=None):
                     safe_dir(p)
                     shutil.rmtree(p)
             safe_dir(tmp)
-            kind="zip" if job["input"]["source_kind"]=="zip" else "video"
+            kind={"zip":"zip","auto":"source"}.get(job["input"]["source_kind"],"video")
             sources=[] if is_youtube else [("source",job["input"]["source"],kind)]
             if job["settings"].get("reference_link"):
                 sources.append(("reference",job["settings"]["reference_link"],"image"))
@@ -196,7 +197,13 @@ def stage(store, jid, bridge=None):
                 else:
                     meta=retry(download)
                 suffix=Path(meta["name"]).suffix.lower()
-                verify_format(part,"video" if k=="youtube" else k,suffix)
+                detected="zip" if suffix==".zip" else "video"
+                verify_format(part,detected if k=="source" else "video" if k=="youtube" else k,suffix)
+                if k=="source":
+                    if detected=="zip" and job["settings"].get("mode")=="manual":
+                        raise RuntimeError("Manual ranges require a single video source")
+                    store.resolve_source(jid,detected)
+                    job=store.get(jid)
                 name=f"{role}-{index:04d}{suffix}"
                 part.rename(tmp/name)
                 total+=meta["size"]
@@ -204,6 +211,9 @@ def stage(store, jid, bridge=None):
                                  "size":meta["size"],"sha256":meta["sha256"],"md5":meta["md5"],"original_name":meta["name"]})
                 store.intake_progress(jid, min(99,round(index/len(plan)*100,1)),
                                       f"Verified {index}/{len(plan)} input files")
+            if job["settings"].get("reference_uploads"):
+                from .uploads import stage_uploads
+                total+=stage_uploads(store,jid,job["settings"]["reference_uploads"],tmp,manifest,JOB_LIMIT-total)
             with (tmp/"manifest.json").open("x") as f:
                 json.dump({"version":1,"files":manifest},f)
                 f.flush(); os.fsync(f.fileno())
@@ -216,6 +226,8 @@ def stage(store, jid, bridge=None):
                 expand(store,jid,final,manifest)
             else:
                 store.transition(jid,"staging","ready",("YouTube inputs verified; GPU dispatch not supported yet" if is_youtube else "Drive inputs verified"),100)
+            from .uploads import discard_uploads
+            discard_uploads(store,jid)
         except (RuntimeError,OSError,ValueError,zipfile.BadZipFile,HTTPException,NotImplementedError,EOFError,zlib.error) as exc:
             if tmp.exists():
                 shutil.rmtree(tmp)

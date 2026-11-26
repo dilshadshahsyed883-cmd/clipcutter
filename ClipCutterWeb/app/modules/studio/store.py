@@ -78,7 +78,11 @@ class Store:
             c.execute("BEGIN IMMEDIATE")
             row=c.execute("SELECT * FROM requests WHERE request_id=? AND owner=?",(req.request_id,self.owner)).fetchone()
             if row:
-                if row["payload"]!=payload: raise HTTPException(409,"Request ID already used with different settings")
+                old=json.loads(row["payload"]); new=json.loads(payload)
+                old["settings"].setdefault("reference_uploads",[])
+                if new["input"]["source_kind"]=="auto" and old["input"]["source_kind"] in ("video","zip"):
+                    old["input"]["source_kind"]="auto"
+                if old!=new: raise HTTPException(409,"Request ID already used with different settings")
                 return self.public(row)
             count=c.execute("SELECT count(*) FROM requests WHERE owner=? AND state='awaiting_input'",(self.owner,)).fetchone()[0]
             if count>=500: raise HTTPException(409,"Pending request limit reached")
@@ -105,6 +109,18 @@ class Store:
 
     def get(self,jid):
         with self.connect() as c: return self.public(self.row(c,jid))
+
+    def request_key(self,jid):
+        with self.connect() as c: return self.row(c,jid)["request_id"]
+
+    def resolve_source(self,jid,kind):
+        if kind not in ("video","zip"): raise ValueError("Invalid detected source")
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=self.row(c,jid); payload=json.loads(row["payload"])
+            if row["state"]!="staging" or payload["input"]["source_kind"]!="auto": raise RuntimeError("Stale source detection")
+            payload["input"]["source_kind"]=kind
+            c.execute("UPDATE requests SET payload=? WHERE id=? AND owner=?",(json.dumps(payload,sort_keys=True,separators=(",",":")),jid,self.owner))
 
     def cancel(self,jid):
         with self.connect() as c:

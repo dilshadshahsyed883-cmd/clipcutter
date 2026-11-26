@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from typing import Literal
 from app.auth import Principal,current_principal
@@ -8,6 +8,7 @@ from .store import Store
 from .intake import Bridge, stage
 from . import youtube
 from .review import Approval, get_review, approve
+from .uploads import create_uploaded, discard_uploads
 
 router=APIRouter(prefix="/api/v1/studio")
 def store(principal:Principal=Depends(current_principal)):
@@ -23,7 +24,13 @@ def capabilities(_:Principal=Depends(current_principal)):
             " GPU transport not connected."}
 
 @router.post("/requests",dependencies=[Depends(require_csrf)],status_code=201)
-def create(req:JobRequest,s:Store=Depends(store)): return s.create(req)
+def create(req:JobRequest,s:Store=Depends(store)):
+    if req.settings.reference_uploads: raise HTTPException(422,"Use the reference upload endpoint")
+    return s.create(req)
+
+@router.post("/requests/upload",dependencies=[Depends(require_csrf)],status_code=201)
+def upload(payload:str=Form(...),images:list[UploadFile]=File(...),s:Store=Depends(store)):
+    return create_uploaded(s,payload,images)
 
 @router.get("/requests")
 def listing(kind:Literal["extractor","analyzer"],s:Store=Depends(store)): return {"requests":s.list(kind)}
@@ -45,7 +52,11 @@ def intake(job:str,tasks:BackgroundTasks,s:Store=Depends(store)):
 def detail(job:str,s:Store=Depends(store)): return s.get(job)
 
 @router.post("/requests/{job}/cancel",dependencies=[Depends(require_csrf)])
-def cancel(job:str,s:Store=Depends(store)): return s.cancel(job)
+def cancel(job:str,s:Store=Depends(store)):
+    with s.admission():
+        row=s.cancel(job)
+        discard_uploads(s,job)
+        return row
 
 @router.get("/requests/{job}/batch")
 def batch(job:str,s:Store=Depends(store)):

@@ -23,6 +23,7 @@ RESERVE = 5_000_000_000
 ID = re.compile(r"[A-Za-z0-9_-]{10,200}")
 TYPES = {"video": {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"},
          "image": {".jpg", ".jpeg", ".png", ".webp"}, "zip": {".zip"}}
+TYPES["source"]=TYPES["video"]|TYPES["zip"]
 
 def parse_link(link):
     if not isinstance(link, str) or len(link) > 2048:

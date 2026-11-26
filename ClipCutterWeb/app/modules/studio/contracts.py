@@ -41,7 +41,7 @@ def youtube_link(value):
 
 class Input(Strict):
     source: str=Field(min_length=1,max_length=2048)
-    source_kind: Literal["video","zip","folder","youtube"]="video"
+    source_kind: Literal["auto","video","zip","folder","youtube"]="auto"
     output_folder: str | None=Field(default=None,max_length=2048)
     @field_validator("output_folder")
     @classmethod
@@ -51,6 +51,12 @@ class Input(Strict):
     def kind(self):
         if self.output_folder and "/folders/" not in urlsplit(self.output_folder).path:
             raise ValueError("Output destination must be a Drive folder")
+        if self.source_kind=="auto":
+            host=urlsplit(self.source).netloc
+            if host in ("www.youtube.com","youtube.com","m.youtube.com","youtu.be"):
+                self.source_kind="youtube"
+            elif "/folders/" in urlsplit(self.source).path:
+                self.source_kind="folder"
         if self.source_kind=="youtube":
             self.source=youtube_link(self.source)
             return self
@@ -71,6 +77,7 @@ class Extractor(Strict):
     kind: Literal["extractor"]="extractor"
     mode: Literal["reference","manual"]="reference"
     reference_link: str | None=Field(default=None,max_length=2048)
+    reference_uploads: list[Annotated[str,Field(pattern=r"^[a-f0-9]{64}$")]]=Field(default_factory=list,max_length=12)
     threshold: float=Field(default=.40,ge=0,le=1)
     scan_quality: Literal["rapid","balanced","thorough"]="balanced"
     ranges: list[Range]=Field(default_factory=list,max_length=1000)
@@ -87,8 +94,8 @@ class Extractor(Strict):
     def validate_reference(cls,v): return drive_link(v) if v is not None else None
     @model_validator(mode="after")
     def check(self):
-        if (self.mode=="reference" or self.framing!="whole") and not self.reference_link:
-            raise ValueError("Reference Drive link required")
+        if (self.mode=="reference" or self.framing!="whole") and not (self.reference_link or self.reference_uploads):
+            raise ValueError("Reference images required")
         if self.mode=="manual" and not self.ranges: raise ValueError("Manual ranges required")
         if self.mode=="reference" and self.ranges: raise ValueError("Reference scan cannot include manual ranges")
         ordered=sorted(self.ranges,key=lambda r:r.start_ms)
@@ -116,6 +123,7 @@ class Analyzer(Strict):
     ignore_static_faces: bool=True
     ignore_regions: list[Region]=Field(default_factory=list,max_length=32)
     reference_link: str | None=Field(default=None,max_length=2048)
+    reference_uploads: list[Annotated[str,Field(pattern=r"^[a-f0-9]{64}$")]]=Field(default_factory=list,max_length=12)
     @field_validator("reference_link")
     @classmethod
     def validate_reference(cls,v): return drive_link(v) if v is not None else None
@@ -126,7 +134,9 @@ class JobRequest(Strict):
     request_id: str=Field(pattern=r"^[a-f0-9]{32}$")
     @model_validator(mode="after")
     def check(self):
-        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind not in ("video","youtube"):
+        if self.settings.reference_link and self.settings.reference_uploads:
+            raise ValueError("Choose Drive or uploaded references, not both")
+        if isinstance(self.settings,Extractor) and self.settings.mode=="manual" and self.input.source_kind not in ("auto","video","youtube"):
             raise ValueError("Manual ranges require a single video source")
         if self.input.source_kind=="youtube" and isinstance(self.settings,Extractor) and self.settings.include_audio:
             raise ValueError("YouTube intake is video-only; select Remove audio")
