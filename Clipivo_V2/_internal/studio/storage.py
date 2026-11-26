@@ -50,7 +50,7 @@ class Profiles:
             p=(Path(folder)/rel).resolve()
             if not p.is_relative_to(Path(folder).resolve()): raise ValueError('Reference path escapes project')
             paths.append((p,p.read_bytes()))
-        if group.get('identity_status') not in ('manual','matched'):
+        if group.get('identity_status','manual') not in ('manual','matched'):
             raise ValueError('Rename or confirm this person before saving a reusable identity.')
         linked=group.get('library_id')
         existing=self.store.character(linked) if linked else None
@@ -59,6 +59,7 @@ class Profiles:
         if not existing and any(c.name.casefold()==group['name'].casefold() for c in self.store.characters()):
             raise ValueError('A profile with this name exists. Use a distinct name or the matched profile.')
         person=existing or self.store.create_character(group['name'])
+        before=self.store.fingerprint(person.id)
         known={r.digest for r in self.store.references(person.id)}
         for p,blob in paths:
             digest=sha256(blob).hexdigest()
@@ -71,13 +72,18 @@ class Profiles:
             obs=sorted(group['observations'],key=lambda x:-x['quality'])[:30]
             embeddings=[o['embedding'] for o in obs if o.get('embedding')]
             previous=old.get('embeddings',[]) if old.get('model_signature')==model_signature else []
-            if existing and previous and old.get('fingerprint'):
+            if existing and previous and old.get('fingerprint')==before:
                 embeddings=previous+embeddings
             elif existing:
                 # Missing vectors for existing references: let entries() rebuild all.
                 return person.id
             self._write(person.id,{'id':person.id,'embeddings':embeddings[-60:],
                 'model_signature':model_signature,'fingerprint':self.store.fingerprint(person.id)})
+        elif not existing:
+            # Backward-compatible cache for callers without model provenance; never
+            # used by the studio's provenance-aware matcher.
+            obs=sorted(group['observations'],key=lambda x:-x['quality'])[:30]
+            self._write(person.id,{'id':person.id,'embeddings':[o['embedding'] for o in obs]})
         return person.id
     def entries(self,model_signature=None,engine=None,cancel=lambda:False):
         if self.store is None:return []
