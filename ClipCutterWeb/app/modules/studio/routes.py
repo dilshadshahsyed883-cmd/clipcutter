@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from typing import Literal
 from app.auth import Principal,current_principal
 from app.modules.admin.security import require_csrf
 from .contracts import JobRequest
 from .store import Store
+from .intake import Bridge, stage
 
 router=APIRouter(prefix="/api/v1/studio")
 def store(principal:Principal=Depends(current_principal)):
@@ -12,14 +13,25 @@ def store(principal:Principal=Depends(current_principal)):
 
 @router.get("/capabilities")
 def capabilities(_:Principal=Depends(current_principal)):
-    return {"input_intake":False,"worker_dispatch":False,"output_receiver":False,
-            "request_storage":True,"message":"Requests are saved; Drive intake and worker transport are not connected."}
+    available=Bridge().available()
+    return {"input_intake":available,"worker_dispatch":False,"output_receiver":False,
+            "request_storage":True,"message":("Drive intake available; GPU transport not connected." if available else "Drive intake bridge unavailable; requests may be saved.")}
 
 @router.post("/requests",dependencies=[Depends(require_csrf)],status_code=201)
 def create(req:JobRequest,s:Store=Depends(store)): return s.create(req)
 
 @router.get("/requests")
 def listing(kind:Literal["extractor","analyzer"],s:Store=Depends(store)): return {"requests":s.list(kind)}
+
+@router.post("/requests/{job}/intake",dependencies=[Depends(require_csrf)],status_code=202)
+def intake(job:str,tasks:BackgroundTasks,s:Store=Depends(store)):
+    row=s.get(job)
+    if row["state"] not in ("awaiting_input","staging","failed") or (row["state"]=="failed" and not row["message"].startswith("Drive intake:")):
+        raise HTTPException(409,"Intake not available in this state")
+    if not Bridge().available():
+        raise HTTPException(503,"Drive intake bridge unavailable")
+    tasks.add_task(stage,s,job)
+    return {"accepted":True}
 
 @router.get("/requests/{job}")
 def detail(job:str,s:Store=Depends(store)): return s.get(job)
