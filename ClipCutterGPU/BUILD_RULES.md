@@ -2,7 +2,7 @@
 
 Reference: concat/main 84bcb11b72263caa6ad9c021d5d07f4dff53cc46, .github/workflows/concat-salad-candidate.yml and tools/release_image_smoke.py.
 
-- Separate image: ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate:<full-main-SHA>. No latest tag, no overwrite/reuse of existing published SHA tag, no Concat package changes.
+- Separate image: ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:<full-main-SHA>. No latest tag, no overwrite/reuse of existing published SHA tag, no Concat package changes.
 - Build from reviewed exact canonical main and a clean checkout. Git archive includes only ClipCutterGPU; no Web service, desktop, private inputs or credentials in context. The builder stages only the two externally supplied authorized PC model files into its temporary context after verification; never commit them to Git. linux/amd64; revision/source OCI labels and embedded source SHA.
 - Build validation: import/compile, exact source hashes inside image, request contracts, synthetic CPU extraction and verified output, liveness and authenticated capabilities, honest not-ready status without GPU. Any failure blocks publication.
 - Owner build hold: GPU workflow manual-only, build job disabled until explicit finalization approval. Source merges never trigger Docker builds. Future GHCR publication only after authorized model supply, exact approved SHA and smoke gates pass. No EXE, Salad deployment or billing action.
@@ -20,3 +20,6 @@ bash ClipCutterGPU/build-candidate.sh <approved-main-sha>
 ```
 
 This script does not publish by itself. The reviewed main-only workflow handles publication after CANDIDATE_BUILD=PASS. Build machine must have Docker, registry and PyPI access. No GPU is needed for the synthetic CPU gates; real CUDA tests require a GPU.
+
+## Private non-commercial research testing only
+Owner approved a dedicated private testing image; never publish packaged models into the existing candidate package. Before building, verify dedicated GHCR package metadata is private using verify-private-package.py and a secure package-read credential. Verify again immediately before and after push. New package must first be established with a model-free seed, private visibility independently confirmed, and access restricted to approved accounts. Do not rely on repository visibility, which is public. Use exact digest for Salad, a separate read-only registry credential and separate worker token. Private visibility does not grant rights to model weights. No production or monetized use on research-only terms. Actual authorization and files, private package creation, CI model supply, transport and acceptance are still outstanding. Build remains disabled.

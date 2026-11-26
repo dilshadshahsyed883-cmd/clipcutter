@@ -8,6 +8,8 @@ SHA="$1"
 # Owner must explicitly approve final SHA and lawful redistribution before this build.
 [[ "${CLIPCUTTER_FINAL_APPROVED_SHA:-}" == "$SHA" && "${CLIPCUTTER_MODEL_REDISTRIBUTION_AUTHORIZED:-}" == 1 ]] || { echo "Final build and model rights approval required" >&2; exit 1; }
 [[ -n "${CLIPCUTTER_AUTHORIZED_MODEL_DIR:-}" ]] || { echo "Authorized local model directory required" >&2; exit 1; }
+# Do not even build licensed model layers until the dedicated package is verified private.
+python3 "$(dirname "$0")/verify-private-package.py"
 
 REPO="https://github.com/dilshadshahsyed883-cmd/clipcutter.git"
 ROOT="$(git rev-parse --show-toplevel)"
@@ -19,7 +21,7 @@ else
 fi
 [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || { echo "Clean checkout required"; exit 1; }
 for c in docker python3 openssl; do command -v "$c" >/dev/null; done
-IMAGE="ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate:$SHA"
+IMAGE="ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:$SHA"
 WORK="$(mktemp -d)"
 REPORT="$(mktemp -d "${TMPDIR:-/tmp}/clipcutter-image-report.XXXXXXXX")"
 NAME="clipcutter-smoke-$(openssl rand -hex 8)"

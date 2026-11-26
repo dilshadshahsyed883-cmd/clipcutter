@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: clipcutter-gpu-candidate-${{ github.ref }}
+  group: clipcutter-gpu-private-test-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -27,6 +27,8 @@ jobs:
       - name: Build and verify exact candidate
         id: build
         shell: bash
+        env:
+          CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
         run: |
           set -euo pipefail
           bash ClipCutterGPU/build-candidate.sh "$GITHUB_SHA"
@@ -35,11 +37,12 @@ jobs:
         shell: bash
         env:
           GHCR_TOKEN: ${{ github.token }}
+          CLIPCUTTER_PACKAGE_VERIFY_TOKEN: ${{ secrets.CLIPCUTTER_PACKAGE_VERIFY_TOKEN }}
           IMAGE: ${{ steps.build.outputs.image }}
           REPORT: ${{ steps.build.outputs.report }}
         run: |
           set -euo pipefail
-          test "$IMAGE" = "ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate:$GITHUB_SHA"
+          test "$IMAGE" = "ghcr.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test:$GITHUB_SHA"
           test "$(git ls-remote --exit-code https://github.com/dilshadshahsyed883-cmd/clipcutter.git refs/heads/main | awk '{print $1}')" = "$GITHUB_SHA"
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
@@ -49,9 +52,11 @@ jobs:
             exit 1
           fi
           grep -Eiq 'manifest unknown|name unknown|no such manifest|manifest.*not found' "$REPORT/registry-check.txt" || { cat "$REPORT/registry-check.txt" >&2; exit 1; }
+          python3 ClipCutterGPU/verify-private-package.py
           docker push "$IMAGE"
+          python3 ClipCutterGPU/verify-private-package.py
           REFERENCE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
-          [[ "$REFERENCE" =~ ^ghcr\.io/dilshadshahsyed883-cmd/clipcutter-gpu-candidate@sha256:[a-f0-9]{64}$ ]]
+          [[ "$REFERENCE" =~ ^ghcr\.io/dilshadshahsyed883-cmd/clipcutter-gpu-private-test@sha256:[a-f0-9]{64}$ ]]
           docker manifest inspect "$REFERENCE" >/dev/null
           printf '%s\n%s\n' "$IMAGE" "$REFERENCE" > "$REPORT/image-reference.txt"
           export REFERENCE
