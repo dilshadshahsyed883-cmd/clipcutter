@@ -1,0 +1,33 @@
+<section class="content-card">
+<h2>Clip Extractor</h2>
+<p class="lead">Preview a local source and prepare processing settings. Worker transport is not connected. No jobs are accepted.</p>
+<link rel="stylesheet" href="/static/extractor.css">
+<div class="extractor-layout">
+<div>
+<label for="source-preview">Local video preview (not uploaded)</label>
+<input id="source-preview" type="file" accept="video/*">
+<video id="extractor-preview" controls preload="metadata"></video>
+<p id="preview-status" role="status"></p>
+</div>
+<form id="extractor-options">
+<h3>Recognition &amp; output</h3>
+<label>Match threshold <input name="threshold" type="number" min="0" max="1" step=".01" value=".40" required></label>
+<label>Scan quality <select name="scan_quality"><option>rapid</option><option selected>balanced</option><option>thorough</option></select></label>
+<label>Cut mode <select name="mode"><option value="accurate">Exact frame</option><option value="copy">Keyframe stream copy</option></select></label>
+<label>Output <select name="stitched"><option value="false">Separate clips</option><option value="true">Single stitched video</option></select></label>
+<label>Audio <select name="include_audio"><option value="true">Include</option><option value="false">Remove</option></select></label>
+<label>Quality (%) <input name="quality" type="number" min="50" max="100" value="100" required></label>
+<label>Size limit <select name="max_short_side"><option value="0">Original</option><option>720</option><option>1080</option><option>1440</option></select></label>
+<label>Framing <select name="framing"><option value="whole">Whole picture</option><option value="dynamic">Follow person</option><option value="landscape">Landscape only</option><option value="portrait">Portrait only</option><option value="square">Square only</option></select></label>
+<label><input id="strict-limits" type="checkbox"> Enable strict clip duration</label>
+<div id="limit-fields" hidden>
+<label>Minimum seconds <input name="minimum" type="number" min=".1" max="600" step=".001" value="2.5"></label>
+<label>Maximum seconds <input name="maximum" type="number" min=".1" max="600" step=".001" value="4"></label>
+</div>
+<button type="submit">Validate settings</button>
+<button id="save-options" type="button" disabled>Download validated settings</button>
+<p role="status" id="extractor-status"></p>
+</form>
+</div>
+</section>
+<script defer src="/static/extractor.js"></script>

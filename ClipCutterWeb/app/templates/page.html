@@ -18,7 +18,11 @@
   <a href="/studio/extractor" {% if page.key == 'extractor' %}class="active" aria-current="page"{% endif %}>Clip Extractor</a>
   <a href="/studio/analyzer" {% if page.key == 'analyzer' %}class="active" aria-current="page"{% endif %}>Person Analyzer</a>
 </nav>
+{% if page.key == 'extractor' %}
+{% include "extractor.html" %}
+{% else %}
 <section class="content-card"><h2>{{ page.title }}</h2><p>{{ page.description }}</p><p>Processing is not enabled in this foundation release. No jobs are accepted.</p></section>
+{% endif %}
 </main></div>
 <script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
 </body></html>
