@@ -38,4 +38,5 @@ class IntakeTests(unittest.TestCase):
                 raise Retryable("temporary")
             with self.assertRaises(Retryable): retry(fail)
             self.assertEqual(len(n),5)
-            self.assertEqual(sleep.call_count,4)
+            self.assertEqual(sleep.call_count,5)
+            self.assertTrue(all(c.args==(40,) for c in sleep.call_args_list))
