@@ -80,6 +80,24 @@ class ReviewTests(unittest.TestCase):
         path.write_bytes(b"changed")
         with self.assertRaises(HTTPException):source_preview(self.store,self.jid)
 
+    def test_vps_review_approval_stays_local(self):
+        with self.store.connect() as c:
+            p=json.loads(c.execute("SELECT payload FROM requests WHERE id=?",(self.jid,)).fetchone()[0])
+            p["settings"]["gpu_clip_extraction"]=False
+            c.execute("UPDATE requests SET payload=? WHERE id=?",(json.dumps(p),self.jid))
+        self.scan()
+        self.assertNotIn("gpu_clip_extraction",json.loads(self.d._row(self.jid)["manifest"])["job"]["request"]["settings"])
+        approve(self.store,self.jid,self.approval())
+        self.assertEqual(self.d._row(self.jid)["phase"],"vps_new")
+        from unittest.mock import patch
+        def fake_encode(source,settings,ranges,out,cancel,progress):
+            p=out/"clip_001.mp4";p.write_bytes(VIDEO)
+            return [{"name":p.name,"size":len(VIDEO),"sha256":sha(VIDEO),"media_type":"video/mp4","duration_ms":2000}]
+        with patch("app.modules.studio.vps_export.encode",side_effect=fake_encode):
+            self.assertEqual(self.d.tick(self.jid),"acknowledged")
+        self.assertEqual(self.worker.starts,1)
+        self.assertEqual(self.store.get(self.jid)["state"],"completed")
+
     def test_range_and_changed_input_rejected(self):
         self.scan()
         with self.assertRaises(HTTPException):approve(self.store,self.jid,self.approval(1000,6000))

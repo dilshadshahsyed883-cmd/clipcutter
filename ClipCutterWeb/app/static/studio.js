@@ -81,13 +81,14 @@
    const f=new FormData(form), get=k=>f.get(k), num=k=>Number(get(k)), bool=k=>get(k)==="true", opt=k=>String(get(k)||"").trim()||null;
    const input={source:String(get("source")).trim(),source_kind:"auto",output_folder:opt("output_folder")};
    let settings={kind,reference_link:refMode?.value==="drive"?opt("reference_link"):null};
-   if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:form.elements.include_audio.disabled?false:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
+   if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),gpu_clip_extraction:form.elements.gpu_clip_extraction.checked,cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:form.elements.include_audio.disabled?false:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
    else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
    return {input,settings};
  }
  form.addEventListener("submit",async e=>{
    e.preventDefault();if(saving)return;
-   const p=payload(), files=refMode?.value==="upload"?[...refsSelected]:[];
+   const p=payload();if(kind==="extractor"&&!p.settings.gpu_clip_extraction&&p.settings.framing!=="whole"){status.textContent="VPS extraction supports Whole picture only. Enable GPU for person framing.";return;}
+   const files=refMode?.value==="upload"?[...refsSelected]:[];
    if(refMode?.value==="upload"&&kind==="extractor"&&(p.settings.mode==="reference"||p.settings.framing!=="whole")&&!files.length){status.textContent="Select reference images.";return;}
    const library=refMode?.value==="library",chosen=library?selectedIdentity:null;
    if(library&&!chosen&&(p.settings.mode==="reference"||p.settings.framing!=="whole")){status.textContent="Choose a reference identity.";return;}
@@ -347,17 +348,17 @@
        const gpuUploading=job.state==="ready"&&job.message.startsWith("GPU uploading:");
        [job.id.slice(0,8),gpuUploading?(job.progress===100?"GPU input ready":"Uploading to GPU"):job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
-       if(kind==="extractor")actions.append(put("span",job.settings?.mode==="manual"?"GPU export":"GPU scan + export"));
+       if(kind==="extractor")actions.append(put("span",job.settings?.gpu_clip_extraction===false?(job.settings.mode==="manual"?"VPS export":"GPU scan + VPS export"):(job.settings?.mode==="manual"?"GPU export":"GPU scan + export")));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:")))actions.append(button("Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));
        if(job.gpu_command)actions.append(put("span",job.gpu_command==="cancel"?"Cancellation pending":"Retry pending"));
        else{
          const gpuAction=(name,action)=>button(name,async()=>{try{await api("/requests/"+job.id+"/gpu/"+action,"POST");status.textContent="GPU "+action+" requested";await refresh();}catch(err){status.textContent=err.message;}});
-         if(job.state==="ready"&&(!job.gpu_phase||["new","create_intent","staging","start_intent"].includes(job.gpu_phase))||job.state==="processing"&&["start_intent","processing"].includes(job.gpu_phase))actions.append(gpuAction("Cancel GPU","cancel"));
-         if(job.state==="failed"&&["failed","failed_clean"].includes(job.gpu_phase))actions.append(gpuAction("Retry GPU","retry"));
+         if(job.state==="ready"&&(!job.gpu_phase||["new","create_intent","staging","start_intent","vps_new"].includes(job.gpu_phase))||job.state==="processing"&&["start_intent","processing","vps_processing"].includes(job.gpu_phase))actions.append(gpuAction(job.gpu_phase?.startsWith("vps_")?"Cancel VPS":"Cancel job","cancel"));
+         if(job.state==="failed"&&["failed","failed_clean","vps_failed"].includes(job.gpu_phase))actions.append(gpuAction(job.gpu_phase==="vps_failed"?"Retry VPS":"Retry GPU","retry"));
        }
-       if(!job.gpu_command&&!gpuUploading&&(!job.gpu_phase||["acknowledged","failed_clean","cancelled_clean"].includes(job.gpu_phase))&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
+       if(!job.gpu_command&&!gpuUploading&&(!job.gpu_phase||["acknowledged","failed_clean","cancelled_clean","vps_failed","vps_cancelled"].includes(job.gpu_phase))&&["awaiting_input","ready","failed","cancelled","completed"].includes(job.state)){
          const remove=button(deleting.has(job.id)?"Deleting…":"Delete",async()=>{
            if(deleting.has(job.id)||deleted.has(job.id))return;
            deleting.add(job.id);remove.disabled=true;remove.textContent="Deleting…";

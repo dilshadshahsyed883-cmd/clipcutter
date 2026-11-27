@@ -147,7 +147,7 @@ class Store:
                 raise HTTPException(409,"Active or batch parent requests cannot be deleted")
             if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone():
                 attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone()
-                if attempt and attempt["phase"] not in ("acknowledged","failed_clean","cancelled_clean"):
+                if attempt and attempt["phase"] not in ("acknowledged","failed_clean","cancelled_clean","vps_failed","vps_cancelled"):
                     raise HTTPException(409,"GPU attempt must be reconciled before deletion")
             if c.execute("SELECT 1 FROM gpu_commands WHERE job_id=?",(jid,)).fetchone():raise HTTPException(409,"GPU action pending")
             c.execute("UPDATE requests SET state='deleted',message='Deleted by owner',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
@@ -174,9 +174,9 @@ class Store:
                 c.execute("UPDATE requests SET state='cancelled',message='Cancelled before GPU dispatch; verified inputs retained',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,self.owner))
                 return {"accepted":True,"action":action}
             if action=="retry":
-                if row["state"]!="failed" or not attempt or attempt["phase"] not in ("failed","failed_clean"):
+                if row["state"]!="failed" or not attempt or attempt["phase"] not in ("failed","failed_clean","vps_failed"):
                     raise HTTPException(409,"Retry requires a confirmed failed GPU attempt")
-            elif row["state"] not in ("ready","processing") or not attempt or attempt["phase"] not in ("new","create_intent","staging","start_intent","processing"):
+            elif row["state"] not in ("ready","processing") or not attempt or attempt["phase"] not in ("new","create_intent","staging","start_intent","processing","vps_new","vps_processing"):
                 raise HTTPException(409,"No cancellable GPU attempt")
             old=c.execute("SELECT action FROM gpu_commands WHERE job_id=?",(jid,)).fetchone()
             if old and old["action"]!=action:raise HTTPException(409,"GPU action pending")

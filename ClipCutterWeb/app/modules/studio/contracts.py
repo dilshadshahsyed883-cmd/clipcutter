@@ -81,6 +81,7 @@ class Extractor(Strict):
     threshold: float=Field(default=.40,ge=0,le=1)
     scan_quality: Literal["rapid","balanced","thorough"]="balanced"
     ranges: list[Range]=Field(default_factory=list,max_length=1000)
+    gpu_clip_extraction: bool=True
     cut_mode: Literal["accurate","copy"]="accurate"
     stitched: bool=False
     include_audio: bool=True
@@ -96,6 +97,7 @@ class Extractor(Strict):
     def check(self):
         if (self.mode=="reference" or self.framing!="whole") and not (self.reference_link or self.reference_uploads):
             raise ValueError("Reference images required")
+        if not self.gpu_clip_extraction and self.framing!="whole":raise ValueError("VPS extraction supports Whole picture framing only; enable GPU for person framing")
         if self.mode=="manual" and not self.ranges: raise ValueError("Manual ranges required")
         if self.mode=="reference" and self.ranges: raise ValueError("Reference scan cannot include manual ranges")
         ordered=sorted(self.ranges,key=lambda r:r.start_ms)
