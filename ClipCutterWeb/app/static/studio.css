@@ -1,11 +1,9 @@
 .studio-card{margin-bottom:18px}.studio-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.studio-grid label{display:block;font-size:13px;font-weight:600}.studio-grid input:not([type=checkbox]),.studio-grid select,.studio-fields input{display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;margin-top:5px;font:inherit;background:#fff}.studio-check{display:flex!important;align-items:center;gap:8px}.studio-note{color:#64748b;font-size:13px;line-height:1.5}.studio-actions,.studio-heading,.studio-fields{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.studio-heading{justify-content:space-between}.studio-card button{padding:9px 13px;border-radius:8px;border:0;background:#4f46e5;color:#fff;font-weight:600;cursor:pointer}.studio-card .studio-secondary{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}.studio-card button:disabled{opacity:.5;cursor:not-allowed}.studio-fields{margin-bottom:10px}.studio-fields label{flex:1;min-width:90px;font-size:12px}.studio-table-wrap{overflow:auto}.studio-table{border-collapse:collapse;width:100%;font-size:13px}.studio-table th,.studio-table td{text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;vertical-align:top}.studio-table th{background:#f8fafc}.studio-table button{margin:2px}.studio-output{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid #e2e8f0;padding:10px 0}.studio-card video{width:100%;max-height:55vh;background:#111827;border-radius:8px;margin-top:12px}.studio-card [hidden]{display:none!important}
 
-/* Match Concat Web's uploader workspace spacing without changing the shared shell. */
-.content:has(> #studio) {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  padding: 24px clamp(14px, 2vw, 32px);
+/* Concat Production margin parity: same shell gutters and centered 1400px workspace. */
+.content:has(> #studio) { padding-block: 24px; }
+.content:has(> #studio) > .studio-tabs {
+  margin-inline-start: max(0px, calc((100% - 1400px) / 2));
 }
 #studio {
   display: grid;
@@ -13,7 +11,9 @@
   gap: 14px;
   width: 100%;
   min-width: 0;
-  padding: 8px 12px 36px;
+  max-width: 1400px;
+  margin-inline: auto;
+  padding: 8px 0 36px;
 }
 #studio > .studio-card {
   width: 100%;
@@ -23,12 +23,12 @@
   padding: 17px 18px;
 }
 @media (max-width: 760px) {
-  .content:has(> #studio) { padding: 18px 12px; }
-  #studio { padding: 6px 10px 30px; }
+  .content:has(> #studio) { padding-block: 18px; }
+  #studio { padding: 6px 0 30px; }
   #studio > .studio-card { padding: 14px; }
 }
 @media (max-width: 480px) {
-  #studio { padding: 4px 6px 24px; }
+  #studio { padding: 4px 0 24px; }
   #studio .studio-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
