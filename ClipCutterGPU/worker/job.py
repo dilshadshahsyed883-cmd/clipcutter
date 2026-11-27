@@ -92,7 +92,7 @@ def run(root,action,cancel):
         with tempfile.TemporaryDirectory(prefix="analysis-",dir=root) as tmp:
             data=analyze(source,Path(tmp)/"project",model_dir,engine.gpu,settings.sample_interval_ms/1000,
                 settings.similarity_threshold,640,progress,cancel.is_set,filters=filters,engine=engine,persist=False,store_crops=False,representatives=True)
-            # Do not export raw embeddings, images, face coordinates or host paths.
+            # Export only anonymous summaries and bounded representative crops, never embeddings, raw observations or host paths.
             people=[{k:g[k] for k in ("id","name","identity_status","segments","raw_segments","filtered","filter_reasons")} for g in data["people"]]
             summary={k:data[k] for k in ("version","duration","sample_interval","threshold","decoded_frames","analyzed_frames","device","elapsed_seconds")}
             summary.update(people=people,source_sha256=job.source_sha256,
@@ -109,6 +109,7 @@ def run(root,action,cancel):
                 name=f"person_{index:03d}.jpg";(output/name).write_bytes(payload)
                 person["thumbnail"]=name;thumbnails.append((name,"image/jpeg"))
         if cancel.is_set():raise InterruptedError("Cancelled")
+        if len(json.dumps(summary,ensure_ascii=False).encode("utf-8"))>MAX_JSON:raise RuntimeError("Analysis summary exceeds verified delivery limit; split source video")
         publish(output,"analysis.json",summary)
         with (output/"timeline.csv").open("x",encoding="utf-8",newline="") as f:
             w=csv.writer(f);w.writerow(["person_id","person","start_seconds","end_seconds"])

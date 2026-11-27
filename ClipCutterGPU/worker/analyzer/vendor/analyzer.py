@@ -78,7 +78,7 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
             for index,(e,crop,q,box,confidence) in enumerate(detections):
                 x,y,X,Y=box; normalized=[x/w,y/h,X/w,Y/h]
                 i=assign(groups,e,used,threshold,box=normalized,timestamp=t,step=step); used.add(i); g=groups[i]; g['_sum']+=e
-                if len(groups)>500:raise RuntimeError("Analyzer group limit exceeded; split the source video")
+                if representatives and len(groups)>500:raise RuntimeError("Analyzer group limit exceeded; split the source video")
                 refdir=refs/g['id']; refdir.mkdir(exist_ok=True)
                 # Keep each sampled face so groups can be corrected after analysis.
                 path=refdir/f'{observed:07d}.jpg'; rel=path.relative_to(folder).as_posix()
