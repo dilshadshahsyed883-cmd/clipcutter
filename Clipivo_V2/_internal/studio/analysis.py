@@ -1,6 +1,5 @@
 """Conservative matching; unknown groups remain anonymous until reviewed."""
 from pathlib import Path
-from version import __version__
 import numpy as np
 import sqlite3
 from v22.engine import unit
@@ -65,7 +64,7 @@ def run(video,folder,models,cfg,progress,cancel,live,profiles,engine=None):
     data=analyze(video,folder,models,cfg.get('gpu',True),cfg.get('step',.5),cfg.get('threshold',.45),cfg.get('size',640),progress,cancel,live,cfg.get('filters',{}),engine=engine,persist=False)
     if cancel():raise InterruptedError('Cancelled; no completed project saved')
     refresh(data)
-    match_profiles(data,profiles);data['studio_version']=__version__
+    match_profiles(data,profiles);data['studio_version']='2.3.1'
     if cfg.get('model_signature'):data['model_signature']=cfg['model_signature']
     if cfg.get('profile_warnings'):data['profile_warnings']=cfg['profile_warnings']
     if cancel():raise InterruptedError('Cancelled; no completed project saved')

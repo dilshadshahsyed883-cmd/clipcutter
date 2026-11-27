@@ -12,10 +12,10 @@ class ReleaseVersionConsistency(unittest.TestCase):
         version = assignments['__version__']
         self.assertRegex(version, r'^\d+\.\d+\.\d+$')
         self.assertIn('V' + version, (ROOT / 'docs' / 'README.md').read_text(encoding='utf-8'))
-        for relative in ('app.py', 'ui/about_dialog.py', 'studio/window.py', 'studio/analysis.py'):
+        for relative in ('app.py', 'ui/about_dialog.py', 'studio/window.py'):
             tree = ast.parse((ROOT / relative).read_text(encoding='utf-8'))
             self.assertTrue(any(isinstance(n, ast.ImportFrom) and n.module == 'version' and any(a.name == '__version__' for a in n.names) for n in ast.walk(tree)), relative)
-        self.assertIn("data['studio_version']=__version__", (ROOT / 'studio/analysis.py').read_text(encoding='utf-8'))
+        # The frozen analyzer has independent component metadata; do not mutate it for a desktop release.
 
 if __name__ == '__main__':
     unittest.main()
