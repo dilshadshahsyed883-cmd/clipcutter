@@ -10,6 +10,7 @@ class StudioLayoutTests(unittest.TestCase):
             for key in ("new","queue","results"):
                 self.assertIn('data-view="'+key+'"',html)
                 self.assertIn('id="studio-'+key+'"',html)
+            self.assertNotIn("/api/v1/studio/performance-report",html)
             self.assertNotIn("Submit input and processing settings",html)
             self.assertNotIn('name="source_kind"',html)
             self.assertEqual('id="reference-files"' in html,kind=="extractor")
@@ -25,6 +26,9 @@ class StudioLayoutTests(unittest.TestCase):
         self.assertIn("grid-template-columns:repeat(4,minmax(0,1fr))",css)
     def test_gpu_template_compact(self):
         html=(ROOT/"app/templates/gpu.html").read_text()
+        self.assertEqual(html.count("/api/v1/studio/performance-report"),1)
+        self.assertIn('name="hours"',html)
+        self.assertIn('value="24" selected',html)
         self.assertNotIn("Use a separate dedicated ClipCutter group",html)
         self.assertIn('id="gpu-capability"',html)
         self.assertNotIn("<h2>GPU Config</h2>",html)

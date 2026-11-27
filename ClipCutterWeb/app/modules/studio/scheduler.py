@@ -129,7 +129,7 @@ class Scheduler:
         self._reap()
         with self.store.admission():
             controls=self.control.snapshot();paused=controls["paused"];action=controls["action"]
-            state=self.lifecycle.tick(paused=paused,manual=action)
+            state=self.lifecycle.tick(paused=paused,manual=action,force=controls["status"]=="recheck_requested")
             clear=action if (action=="start" and state in ("ready","ready_dispatch_blocked","worker_busy") or
                              action=="stop" and state=="stopped") else None
             record=self.lifecycle.snapshot()

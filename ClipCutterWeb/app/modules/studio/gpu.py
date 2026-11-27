@@ -124,9 +124,12 @@ class GPUStore:
         cfg = GPUSettings.model_validate(value.model_dump(include=set(GPUSettings.model_fields)))
         with self.store.admission(), self.store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            _, old_salad, old_worker = self._read(con)
+            old_cfg, old_salad, old_worker = self._read(con)
             key = "" if value.clear_salad_key else value.salad_key or old_salad
             worker = "" if value.clear_worker_key else value.worker_key or old_worker
+            if group_path(old_cfg)!=group_path(cfg) or old_salad!=key or old_worker!=worker:
+                status_cache_table(con)
+                con.execute("DELETE FROM gpu_status_cache")
             con.execute("INSERT INTO gpu_config VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,salad_key=excluded.salad_key,worker_key=excluded.worker_key", (cfg.model_dump_json(), key, worker))
         return self.public()
 
@@ -152,6 +155,44 @@ def _salad_get(client, path, key):
 def _short_text(value):
     return value[:128] if isinstance(value, str) else None
 
+def status_view(group, approved, instances=()):
+    current=group.get("current_state")
+    state=_short_text(current.get("status")) if isinstance(current,dict) else None
+    replicas=group.get("replicas")
+    autostart=group.get("autostart_policy")
+    reason=group_blocker(group,approved)
+    result={"status":state or "unknown","replicas":replicas if type(replicas) is int else None,
+            "autostart_policy":autostart if type(autostart) is bool else None,
+            "dedicated_group_compatible":reason is None,"group_blocker":reason,
+            "dispatch_enabled":False,"message":BLOCKER,"instances":[]}
+    for item in instances[:10]:
+        if not isinstance(item,dict):raise ValueError("Invalid instance")
+        result["instances"].append({"id":_short_text(item.get("id")),"state":_short_text(item.get("state")),
+            "ready":item.get("ready") if type(item.get("ready")) is bool else None,
+            "pulling_progress":image_pull_percent(item.get("pulling_progress")),
+            "update_time":_short_text(item.get("update_time"))})
+    return result
+
+def status_cache_table(c):
+    c.execute("CREATE TABLE IF NOT EXISTS gpu_status_cache (id INTEGER PRIMARY KEY CHECK(id=1), path TEXT NOT NULL, observed REAL NOT NULL, payload TEXT NOT NULL)")
+
+def cache_status(store,path,result,observed):
+    # Only sanitized status_view/read_status output; no raw group or credentials.
+    if not path:return
+    with store.connect() as c:
+        status_cache_table(c)
+        c.execute("""INSERT INTO gpu_status_cache VALUES(1,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET path=excluded.path,observed=excluded.observed,payload=excluded.payload
+          WHERE gpu_status_cache.path!=excluded.path OR excluded.observed>=gpu_status_cache.observed""",
+          (path,observed,json.dumps(result)))
+
+def cached_status(store,path):
+    with store.connect() as c:
+        status_cache_table(c)
+        row=c.execute("SELECT observed,payload FROM gpu_status_cache WHERE id=1 AND path=?",(path,)).fetchone()
+    if row:return {**json.loads(row["payload"]),"observed_at":row["observed"],"cached":True}
+    return {"status":"not_checked" if path else "not_configured","instances":[],"observed_at":None,"cached":True}
+
 def read_status(cfg, key):
     path = group_path(cfg)
     if not path or not key:
@@ -159,28 +200,12 @@ def read_status(cfg, key):
     try:
         with httpx.Client(timeout=httpx.Timeout(8, connect=3), follow_redirects=False, trust_env=False) as client:
             group = _salad_get(client, path, key)
-            current = group.get("current_state")
-            state = _short_text(current.get("status")) if isinstance(current, dict) else None
-            replica_count = group.get("replicas")
-            autostart = group.get("autostart_policy")
-            result = {"status":state or "unknown", "replicas":replica_count if type(replica_count) is int else None,
-                      "autostart_policy":autostart if type(autostart) is bool else None,
-                      "dispatch_enabled":False, "message":BLOCKER, "instances":[]}
             approved=os.environ.get("CLIPCUTTER_APPROVED_GPU_IMAGE")
-            reason=group_blocker(group,approved)
-            result["dedicated_group_compatible"] = reason is None
-            result["group_blocker"] = reason
-            if state in ("running", "deploying"):
-                instances = _salad_get(client, path + "/instances", key).get("instances")
-                if not isinstance(instances, list):
-                    raise ValueError("Invalid instances response")
-                for item in instances[:10]:
-                    if not isinstance(item, dict):
-                        raise ValueError("Invalid instance")
-                    result["instances"].append({"id":_short_text(item.get("id")), "state":_short_text(item.get("state")),
-                         "ready":item.get("ready") if type(item.get("ready")) is bool else None,
-                         "pulling_progress":image_pull_percent(item.get("pulling_progress")),
-                         "update_time":_short_text(item.get("update_time"))})
+            result=status_view(group,approved)
+            if result["status"] in ("running","deploying"):
+                instances=_salad_get(client,path+"/instances",key).get("instances")
+                if not isinstance(instances,list):raise ValueError("Invalid instances response")
+                result=status_view(group,approved,instances)
             return result
     except (httpx.HTTPError, ValueError, TypeError, OverflowError):
         raise HTTPException(502, "Unable to verify SaladCloud status; check independent group credentials and connectivity") from None
@@ -206,7 +231,18 @@ async def save_config(request:Request, s:GPUStore=Depends(gpu_store)):
 @router.get("/status")
 def status(s:GPUStore=Depends(gpu_store)):
     cfg, key, _ = s.snapshot()
+    observed=time.time()
     result=read_status(cfg, key)
+    cache_status(s.store,group_path(cfg),result,observed)
+    result.update(observed_at=observed,cached=False)
+    public=s.public()
+    result.update(dispatch_enabled=public["dispatch_enabled"],message=public["message"])
+    return result
+
+@router.get("/status/cached")
+def local_status(s:GPUStore=Depends(gpu_store)):
+    cfg,key,_=s.snapshot()
+    result=cached_status(s.store,group_path(cfg)) if key else {"status":"not_configured","instances":[],"cached":True}
     public=s.public()
     result.update(dispatch_enabled=public["dispatch_enabled"],message=public["message"])
     return result

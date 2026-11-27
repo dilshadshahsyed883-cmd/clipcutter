@@ -79,7 +79,6 @@
 <section class="content-card studio-card" id="studio-queue" data-panel="queue" hidden>
 <div class="studio-heading"><h2>Request queue</h2><div class="studio-actions"><span id="queue-status" role="status" class="studio-status-chip">Checking…</span><button id="queue-pause" class="studio-secondary" type="button" disabled>Pause Queue</button><button id="queue-resume" type="button" disabled>Resume Queue</button></div></div>
 
-<form class="studio-actions" method="get" action="/api/v1/studio/performance-report"><label for="report-hours">Performance report</label><select id="report-hours" name="hours"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option></select><button type="submit" class="studio-secondary">Download Report</button></form>
  <div class="studio-table-wrap"><table class="studio-table"><thead><tr><th>Request</th><th>State</th><th>Progress</th><th>Message</th><th>Actions</th></tr></thead><tbody id="request-rows"></tbody></table></div>
 </section>
 <section class="content-card studio-card" id="batch-panel" data-panel="queue" data-extra hidden><h2>Batch videos</h2><div id="batch-members"></div></section>

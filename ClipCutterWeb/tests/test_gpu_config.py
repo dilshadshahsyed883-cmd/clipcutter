@@ -44,6 +44,11 @@ class GPUWebTests(unittest.TestCase):
     _signed_in=test_admin_security.LocalAdminSecurityTests._signed_in
     _post=test_admin_security.LocalAdminSecurityTests._post
 
+    def test_cached_status_never_calls_salad(self):
+        self._signed_in()
+        with patch("app.modules.studio.gpu.read_status",side_effect=AssertionError("external call")):
+            self.assertEqual(self.client.get(API+"/status/cached").status_code,200)
+
     def test_configuration_persistence_and_action_gate(self):
         for path in ("/studio/gpu-config",API+"/config",API+"/status"):
             self.assertEqual(self.client.get(path).status_code,401)
