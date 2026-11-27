@@ -86,7 +86,7 @@ class ReviewTests(unittest.TestCase):
             p["settings"]["gpu_clip_extraction"]=False
             c.execute("UPDATE requests SET payload=? WHERE id=?",(json.dumps(p),self.jid))
         self.scan()
-        self.assertNotIn("gpu_clip_extraction",self.worker.remote["files"])
+        self.assertNotIn("gpu_clip_extraction",json.loads(self.d._row(self.jid)["manifest"])["job"]["request"]["settings"])
         approve(self.store,self.jid,self.approval())
         self.assertEqual(self.d._row(self.jid)["phase"],"vps_new")
         from unittest.mock import patch

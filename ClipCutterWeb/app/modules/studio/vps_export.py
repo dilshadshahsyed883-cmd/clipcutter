@@ -136,7 +136,11 @@ def tick(d,jid,row,allow_start=True):
             from .scheduler import Control
             if Control(store).snapshot()["paused"]:return "paused"
             if d.command(jid)=="cancel":return terminal(d,jid,row,"cancelled","Cancelled before VPS extraction")
-            store.transition(jid,"ready","processing","VPS encoding",0);d._phase(jid,"vps_processing")
+            with store.connect() as c:
+                c.execute("BEGIN IMMEDIATE")
+                if store.row(c,jid)["state"]!="ready":raise DispatchError("VPS admission state changed")
+                c.execute("UPDATE requests SET state='processing',progress=0,message='VPS encoding',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,store.owner))
+                c.execute("UPDATE gpu_attempts SET phase='vps_processing' WHERE job_id=? AND attempt_id=?",(jid,row["attempt_id"]))
         try:
             root=store.root/"inputs"/jid
             for n,item in m["files"].items():
@@ -152,18 +156,31 @@ def tick(d,jid,row,allow_start=True):
             tmp=work/"result.tmp"
             with tmp.open("xb") as f:f.write(canonical(items));f.flush();os.fsync(f.fileno())
             os.replace(tmp,receipt)
+            fd=os.open(work,os.O_RDONLY|os.O_DIRECTORY)
+            try:os.fsync(fd)
+            finally:os.close(fd)
         except Exception as exc:
             return terminal(d,jid,row,"cancelled" if d.command(jid)=="cancel" else "failed","VPS: "+str(exc))
         phase="vps_processing"
     if phase=="vps_processing":
         if not receipt.is_file():
             return terminal(d,jid,row,"cancelled" if command=="cancel" else "failed","Interrupted VPS extraction; retry uses retained inputs")
-        if d.command(jid)=="cancel" and not dest.exists():return terminal(d,jid,row,"cancelled","Cancelled before delivery")
-        if store.get(jid)["state"]=="processing":store.transition(jid,"processing","delivering","Verified VPS outputs",100)
-        d._phase(jid,"vps_delivering");phase="vps_delivering"
+        with store.admission():
+            if d.command(jid)=="cancel" and not dest.exists():return terminal(d,jid,row,"cancelled","Cancelled before delivery")
+            with store.connect() as c:
+                c.execute("BEGIN IMMEDIATE")
+                if store.row(c,jid)["state"]!="processing":raise DispatchError("VPS delivery state changed")
+                c.execute("UPDATE requests SET state='delivering',progress=100,message='Verified VPS outputs',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,store.owner))
+                c.execute("UPDATE gpu_attempts SET phase='vps_delivering' WHERE job_id=? AND attempt_id=?",(jid,row["attempt_id"]))
+        phase="vps_delivering"
     if phase=="vps_delivering":
         items=json.loads(receipt.read_bytes())
-        if not dest.exists():os.rename(out,dest)
+        if not dest.exists():
+            os.rename(out,dest)
+            for folder_path in (work,dest.parent):
+                fd=os.open(folder_path,os.O_RDONLY|os.O_DIRECTORY)
+                try:os.fsync(fd)
+                finally:os.close(fd)
         if out.exists():raise DispatchError("VPS output conflict")
         for item in items:
             p=dest/item["name"]
