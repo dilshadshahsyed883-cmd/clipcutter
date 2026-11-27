@@ -130,6 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ClipCutter-GPU-image-reference
+          retention-days: 1
           path: ${{ steps.build.outputs.report }}
           if-no-files-found: error
       - name: Remove temporary model files
