@@ -6,9 +6,9 @@ import re
 import time
 
 FIELDS=("staging_at","queued_at","running_at","input_verified_at","processing_started_at",
-        "processing_finished_at","completed_at","failed_at","cancelled_at","purged_at")
+        "processing_finished_at","completed_at","failed_at","cancelled_at","purged_at","delivery_started_at","delivery_finished_at")
 STATES={"staging","queued","running","cancelling","completed","failed","cancelled"}
-ACTIONS={"scan","export","analyze"}
+ACTIONS={"scan","export","analyze","vps_export"}
 
 METRIC_LIMITS={"peak_active_slots":2,"worker_capacity":2,"gpu_samples":1000000,
  "gpu_utilization_mean_pct":100,"gpu_utilization_peak_pct":100,"gpu_vram_peak_mib":1048576,"gpu_vram_total_mib":1048576,
@@ -67,7 +67,7 @@ def report(store,hours):
            "Parallel limit is the recorded scheduler limit; peak occupied slots are observed by the worker.",
            "GPU utilization and VRAM are device-wide samples, shared during parallel jobs; sampled peaks are not absolute peaks.",
            "FPS is successful FFmpeg encoded frames / measured encoding command seconds; stream copy is not encoding.",
-           "GPU startup and VPS export metrics are not collected by this report.",
+           "VPS exports have separate processing and delivery timings; GPU startup timing is not collected.",
            "Older workers without timing support cannot be reconstructed.",
            f"Attempts: {len(rows)}"]
     groups={1:[],2:[]}
@@ -90,6 +90,7 @@ def report(store,hours):
             ("Worker subprocess (all processing)","processing_started_at","processing_finished_at"),
             ("Output verification","processing_finished_at","completed_at"),
             ("Receipt and purge interval","completed_at","purged_at"),
+            ("VPS delivery and verification","delivery_started_at","delivery_finished_at"),
             ("Total attempt including receipt","staging_at","purged_at")):
             if a in timing and b in timing and timing[b]>=timing[a]:
                 lines.append(f"{label}: {timing[b]-timing[a]:.3f} s")

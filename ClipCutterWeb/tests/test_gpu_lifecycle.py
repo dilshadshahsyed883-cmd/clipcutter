@@ -92,6 +92,19 @@ class Tests(unittest.TestCase):
         self.life=Lifecycle(self.store,self.cfg,self.api,self.worker,lambda:self.now)
         self.assertEqual(self.tick(),"start_pending_confirmation")
         self.assertEqual(len(self.api.posts),1)
+    def test_cpu_only_intake_still_blocks_gpu_cold_start(self):
+        self.job()
+        req=JobRequest.model_validate({"request_id":"c"*32,
+          "input":{"source":"https://drive.google.com/file/d/abcdef123456789/view"},
+          "settings":{"kind":"extractor","mode":"manual","gpu_clip_extraction":False,
+                      "ranges":[{"start_ms":0,"end_ms":1000}]}})
+        jid=self.store.create(req)["id"]
+        self.assertEqual(self.tick(),"waiting_for_drive_or_reconciliation")
+        self.assertEqual(self.api.posts,[])
+        self.store.transition(jid,"awaiting_input","staging","intake")
+        self.store.transition(jid,"staging","ready","verified")
+        self.assertEqual(self.tick(),"start_pending_confirmation")
+
     def test_download_units_and_fresh_recheck(self):
         self.job();self.api.state="deploying";self.api.item["pulling_progress"]=.30
         self.assertEqual(self.tick(),"downloading_healthy")
