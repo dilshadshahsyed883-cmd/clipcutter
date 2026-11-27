@@ -81,3 +81,7 @@
 #studio .studio-outputs-grid .studio-output{align-content:start;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;min-width:0;overflow-wrap:anywhere}
 #studio .studio-outputs-grid .studio-output input:not([type=checkbox]){width:100%}
 #studio .studio-outputs-grid .studio-clip-thumb{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;margin:0;cursor:pointer}
+
+#studio .studio-person-thumb{width:88px;height:88px;object-fit:contain;background:#e2e8f0;border-radius:7px}
+#studio .studio-person-timeline{position:relative;height:16px;background:#e2e8f0;border-radius:4px;overflow:hidden;width:100%}
+#studio .studio-person-timeline span{position:absolute;top:0;bottom:0;background:#4f46e5}

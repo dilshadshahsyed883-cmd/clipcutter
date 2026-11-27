@@ -14,8 +14,10 @@ def static_overlay(g, duration):
 def filter_observations(g,data,intervals):
     f={**DEFAULTS,**data.get('filters',{})} if 'filters' in data else {'background':False,'static':False,'regions':[]}
     obs=g['observations']; reasons=[]
+    if any(not o.get('dominance_accepted',True) for o in obs):reasons.append('Non-dominant or similarly sized faces')
+    obs=[o for o in obs if o.get('dominance_accepted',True)]
     if g.get('force_include'):return list(obs),[]
-    if f.get('static') and static_overlay(g,data['duration']): return [],['Static corner portrait (estimated)']
+    if f.get('static') and static_overlay(g,data['duration']): return [],reasons+['Static corner portrait (estimated)']
     active=[]
     for o in obs:
         if f.get('background') and (o.get('face_size',1e9)<f['min_face'] or o.get('confidence',1)<f['confidence']):

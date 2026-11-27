@@ -121,8 +121,9 @@ class Analyzer(Strict):
     kind: Literal["analyzer"]="analyzer"
     sample_interval_ms: int=Field(default=1000,ge=250,le=10000)
     similarity_threshold: float=Field(default=.50,ge=0,le=1)
-    ignore_background_faces: bool=True
-    ignore_static_faces: bool=True
+    dominant_face_ratio: float=Field(default=2.5,ge=1.1,le=20)
+    ignore_background_faces: bool=False
+    ignore_static_faces: bool=False
     ignore_regions: list[Region]=Field(default_factory=list,max_length=32)
     reference_link: str | None=Field(default=None,max_length=2048)
     reference_uploads: list[Annotated[str,Field(pattern=r"^[a-f0-9]{64}$")]]=Field(default_factory=list,max_length=12)

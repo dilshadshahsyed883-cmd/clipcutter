@@ -76,6 +76,24 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(self.client.purges,1)
         self.assertEqual(self.client.creates,1)
         self.assertEqual(self.store.output_path(self.jid,"analysis.json")[0].read_bytes(),OUT)
+    def test_analyzer_thumbnail_verified_before_purge(self):
+        self.dispatch.tick(self.jid);self.dispatch.tick(self.jid)
+        self.client.finish()
+        thumb=b"\xff\xd8\xff synthetic jpeg"
+        self.client.remote["result"]["artifacts"].append({"name":"person_001.jpg","size":len(thumb),
+            "sha256":sha(thumb),"media_type":"image/jpeg"})
+        self.client.remote["result_sha256"]=sha(canonical(self.client.remote["result"]))
+        def fetch(a,n,offset,length):
+            return (thumb if n=="person_001.jpg" else OUT)[offset:offset+length]
+        with patch("app.modules.studio.dispatch.RESERVE",0),patch.object(self.client,"fetch",side_effect=fetch):
+            for _ in range(5):
+                if self.dispatch.tick(self.jid)=="published":break
+        self.assertEqual(self.store.get(self.jid)["state"],"completed")
+        self.assertEqual(self.client.purges,0)
+        self.assertEqual(self.store.output_path(self.jid,"person_001.jpg")[0].read_bytes(),thumb)
+        self.assertEqual(Dispatcher(self.store,self.client).tick(self.jid),"acknowledged")
+        self.assertEqual(self.client.purges,1)
+
     def test_performance_report_survives_purge_and_restart(self):
         from app.modules.studio.performance import report
         self.dispatch.tick(self.jid);self.dispatch.tick(self.jid)

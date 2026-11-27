@@ -82,7 +82,7 @@
    const input={source:String(get("source")).trim(),source_kind:"auto",output_folder:opt("output_folder")};
    let settings={kind,reference_link:refMode?.value==="drive"?opt("reference_link"):null};
    if(kind==="extractor")Object.assign(settings,{mode:get("mode"),threshold:num("threshold"),scan_quality:get("scan_quality"),gpu_clip_extraction:form.elements.gpu_clip_extraction.checked,cut_mode:get("cut_mode"),stitched:bool("stitched"),include_audio:form.elements.include_audio.disabled?false:bool("include_audio"),quality:num("quality"),max_short_side:num("max_short_side"),framing:get("framing"),ranges:get("mode")==="manual"?values("range-list").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)})):[],minimum_ms:$("strict-limits").checked?Math.round(num("minimum")*1000):null,maximum_ms:$("strict-limits").checked?Math.round(num("maximum")*1000):null});
-   else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
+   else Object.assign(settings,{sample_interval_ms:num("sample_interval_ms"),similarity_threshold:num("similarity_threshold"),dominant_face_ratio:num("dominant_face_ratio"),ignore_background_faces:form.elements.ignore_background_faces.checked,ignore_static_faces:form.elements.ignore_static_faces.checked,ignore_regions:values("region-list").map(([x,y,w,h])=>({x,y,w,h}))});
    return {input,settings};
  }
  form.addEventListener("submit",async e=>{
@@ -282,12 +282,16 @@
      const data=await r.json();if(stamp!==seq)return;
      if(!Array.isArray(data.people))throw Error("Invalid analysis summary");
      pane.append(put("h3","Detected persons: "+data.people.filter(p=>!p.filtered).length));
+      if(Number.isFinite(data.dominant_face_ratio))pane.append(put("p","Dominant area ratio: "+data.dominant_face_ratio+"x · Timelines are sample-based estimates."));
+      for(const [reason,ranges] of Object.entries(data.excluded_intervals||{})){if(!Array.isArray(ranges))continue;const detail=document.createElement("details");detail.append(put("summary",reason.replaceAll("_"," ")+": "+ranges.length+" excluded ranges"));for(const range of ranges)if(Array.isArray(range)&&range.length===2&&range.every(Number.isFinite))detail.append(put("div",range[0].toFixed(2)+" – "+range[1].toFixed(2)+" s"));pane.append(detail);}
      if(!data.people.length)pane.append(put("p","No persons detected."));
      for(const p of data.people){
        const segs=Array.isArray(p.segments)?p.segments.filter(x=>Array.isArray(x)&&x.length===2&&x.every(Number.isFinite)&&x[1]>=x[0]):[];
        const duration=segs.reduce((n,x)=>n+x[1]-x[0],0);
        const row=put("div","");row.className="studio-output";
-       row.append(put("strong",String(p.name||p.id||"Person")),put("span",p.filtered?"Filtered":"Appearance: "+duration.toFixed(2)+" s"),put("span",segs.length+" ranges"));
+       if(typeof p.thumbnail==="string"&&/^person_\d{3}\.jpg$/.test(p.thumbnail)){const img=document.createElement("img");img.className="studio-person-thumb";img.alt="Representative thumbnail";img.loading="lazy";img.src="/api/v1/studio/requests/"+job+"/outputs/"+encodeURIComponent(p.thumbnail)+"?preview=true";row.append(img);}
+        row.append(put("strong",String(p.name||p.id||"Person")),put("span",p.filtered?"Filtered":"Appearance: "+duration.toFixed(2)+" s"),put("span",segs.length+" ranges"));
+        if(Number.isFinite(data.duration)&&data.duration>0&&segs.length){const line=put("div","");line.className="studio-person-timeline";for(const [a,b] of segs){const seg=put("span","");seg.style.left=(100*a/data.duration)+"%";seg.style.width=(100*(b-a)/data.duration)+"%";seg.title=a.toFixed(2)+" – "+b.toFixed(2)+" s";line.append(seg);}row.append(line);}
        if(segs.length){const detail=document.createElement("details");detail.append(put("summary","Appearance ranges"));for(const [a,b] of segs)detail.append(put("div",a.toFixed(2)+" – "+b.toFixed(2)+" s"));row.append(detail);}
        pane.append(row);
      }

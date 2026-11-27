@@ -57,3 +57,9 @@ class StudioLayoutTests(unittest.TestCase):
         other=env.get_template("studio.html").render(page={"key":"analyzer","title":"Analyzer"})
         self.assertNotIn('id="review-video"',other)
         self.assertNotIn('id="output-view"',other)
+
+    def test_analyzer_dominance_controls(self):
+        env=Environment(loader=FileSystemLoader(ROOT/"app/templates"))
+        html=env.get_template("studio.html").render(page={"key":"analyzer","title":"Analyzer"})
+        self.assertIn('name="dominant_face_ratio"',html)
+        self.assertNotIn('name="dominant_face_ratio"',env.get_template("studio.html").render(page={"key":"extractor","title":"Extractor"}))

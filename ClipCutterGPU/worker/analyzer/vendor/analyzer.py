@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from .engine import Engine,unit
 from .filters import filter_observations, diverse_refs
+from ..dominance import selected_indices, subtract_ranges
 
 def atomic_json(path,data):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);tmp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
@@ -49,10 +50,10 @@ def assign(groups,embedding,used,threshold,*,box=None,timestamp=None,step=None):
             index=spatial[0][1];groups[index]['identity_status']='uncertain';return index
     groups.append({'id':uuid.uuid4().hex[:12],'name':f'Person {len(groups)+1}','_sum':np.zeros_like(embedding),'observations':[],'references':[],'ignored':False,'identity_status':'uncertain' if score>=threshold-.08 else 'unknown'}); return len(groups)-1
 
-def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True,store_crops=True):
+def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=None,filters=None,engine=None,persist=True,store_crops=True,representatives=False):
     if step<=0 or not 0<=threshold<=1: raise ValueError('Invalid analysis settings')
     folder=Path(folder); folder.mkdir(parents=True,exist_ok=False); refs=folder/'references'; refs.mkdir()
-    started=time.perf_counter(); engine=engine or Engine(models,gpu,size); cap=cv2.VideoCapture(str(video)); groups=[]; frames=0; last=-1.; next_t=0.; observed=0; last_live=0
+    started=time.perf_counter(); engine=engine or Engine(models,gpu,size); cap=cv2.VideoCapture(str(video)); groups=[]; excluded={"similar_size":[],"no_face":[]}; frames=0; last=-1.; next_t=0.; observed=0; last_live=0
     try:
         if not cap.isOpened(): raise RuntimeError('Cannot decode video')
         fps=cap.get(cv2.CAP_PROP_FPS); count=cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -70,9 +71,14 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
             if not ok: raise RuntimeError('Frame decode failed')
             observed+=1; used=set()
             boxes=[]; h,w=img.shape[:2]
-            for e,crop,q,box,confidence in engine.get(img):
+            detections=engine.get(img)
+            ratio=(filters or {}).get("dominant_face_ratio")
+            accepted,reason=selected_indices([x[3] for x in detections],ratio) if ratio is not None else (set(range(len(detections))),"legacy")
+            if reason in excluded:excluded[reason].append(t)
+            for index,(e,crop,q,box,confidence) in enumerate(detections):
                 x,y,X,Y=box; normalized=[x/w,y/h,X/w,Y/h]
                 i=assign(groups,e,used,threshold,box=normalized,timestamp=t,step=step); used.add(i); g=groups[i]; g['_sum']+=e
+                if representatives and len(groups)>500:raise RuntimeError("Analyzer group limit exceeded; split the source video")
                 refdir=refs/g['id']; refdir.mkdir(exist_ok=True)
                 # Keep each sampled face so groups can be corrected after analysis.
                 path=refdir/f'{observed:07d}.jpg'; rel=path.relative_to(folder).as_posix()
@@ -80,8 +86,16 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
                     ok,data=cv2.imencode('.jpg',crop)
                     if not ok: raise RuntimeError('Could not encode reference crop')
                     path.write_bytes(data.tobytes())
+                if representatives and index in accepted and q>g.get("_representative_quality",-1):
+                    ch,cw=crop.shape[:2]; factor=min(1,256/max(ch,cw))
+                    thumbnail=cv2.resize(crop,(max(1,round(cw*factor)),max(1,round(ch*factor))))
+                    ok,data=cv2.imencode(".jpg",thumbnail,[cv2.IMWRITE_JPEG_QUALITY,85])
+                    if not ok:raise RuntimeError("Could not encode representative thumbnail")
+                    best=refdir/"representative.jpg";best.write_bytes(data.tobytes())
+                    g["_representative_quality"]=q
+                    g["representative"]=best.relative_to(folder).as_posix()
                 sig=cv2.resize(cv2.cvtColor(crop,cv2.COLOR_BGR2GRAY),(8,8)).ravel().tolist()
-                g['observations'].append({'time':round(t,3),'image':rel,'quality':q,'embedding':e.tolist(),'box_norm':normalized,'face_size':min(X-x,Y-y),'confidence':confidence,'signature':sig})
+                g['observations'].append({'time':round(t,3),'image':rel,'quality':q,'embedding':e.tolist(),'box_norm':normalized,'face_size':min(X-x,Y-y),'confidence':confidence,'signature':sig,'dominance_accepted':index in accepted})
                 boxes.append((g['id'],g['name'],normalized))
             if live and time.monotonic()-last_live>=.25:
                 last_live=time.monotonic()
@@ -96,7 +110,9 @@ def analyze(video,folder,models,gpu,step,threshold,size,progress,cancel,live=Non
         if duration and frames+1<count: raise RuntimeError('Video ended before reported frame count; analysis incomplete')
         duration=max(last+1/fps, duration)
         data={'decoded_frames':frames,'analyzed_frames':observed,'version':2,'source':str(Path(video).resolve()),'duration':round(duration,3),'sample_interval':step,'threshold':threshold,'detector_size':size,'device':engine.device,'warning':engine.warning,'elapsed_seconds':round(time.perf_counter()-started,2),'people':groups,'filters':filters or {}}
-        for g in groups: g.pop('_sum')
+        data["excluded_intervals"]={k:intervals(v,duration,step) for k,v in excluded.items()}
+        for g in groups:
+            g.pop('_sum');g.pop('_representative_quality',None)
         refresh(data)
         if persist: save_project(folder,data)
         return data
@@ -107,7 +123,9 @@ def refresh(data):
         active,reasons=filter_observations(g,data,intervals)
         g['raw_segments']=intervals([o['time'] for o in g['observations']],data['duration'],data['sample_interval'])
         g['segments']=intervals([o['time'] for o in active],data['duration'],data['sample_interval'])
-        g['filter_reasons']=reasons; g['filtered']=not bool(active) and bool(g['observations'])
+        excluded=data.get("excluded_intervals",{})
+        g["segments"]=subtract_ranges(g["segments"],sorted(excluded.get("similar_size",[])+excluded.get("no_face",[])))
+        g['filter_reasons']=reasons; g['filtered']=not bool(g['segments']) and bool(g['observations'])
         g['references']=diverse_refs(active or g['observations'])
 
 def save_project(folder,data):
