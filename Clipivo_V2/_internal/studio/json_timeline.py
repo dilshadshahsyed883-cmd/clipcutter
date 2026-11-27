@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -14,7 +15,7 @@ VIDEO = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.mts', '.m2ts', '.mpg
 def us(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
         raise ValueError('Invalid timestamp')
-    return round(value * US)
+    return int(math.floor(value * US + .5))
 
 def stamp(path):
     p = Path(path).resolve(strict=True)
@@ -107,7 +108,7 @@ def scan_folder(folder, people, probe, cancel=lambda: False, progress=lambda *ar
             media.append({'path': str(p), 'relative': rel.as_posix(), 'duration': duration,
                           'person': next(iter(found)) if len(found) == 1 else None, 'stamp': before})
             if len(found)>1: warnings.append('Ambiguous folder: ' + rel.as_posix())
-        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError) as exc:
             warnings.append(str(rel) + ': ' + str(exc))
         progress(i+1, len(files))
     return media, warnings
@@ -170,7 +171,7 @@ def generate(imported, folder, media, cfg, seed, cancel=lambda:False, warnings=(
                 if nonconsecutive: pool=nonconsecutive
                 if pool:
                     m,speed=rng.choice(pool)
-                    trim=rng.randint(0,max(0,m['duration']-round(length*speed)))
+                    trim=rng.randint(0,max(0,m['duration']-int(math.floor(length*speed+.5))))
                     row.update(selected={**m,'trim':trim,'speed':speed},reason='')
                     used.add(m['path']);previous=m['path']
             elif pid:
@@ -200,7 +201,7 @@ def validate(plan):
         c=row.get('selected')
         if c:
             speed=c['speed'];trim=c['trim'];length=c['duration']
-            if not isinstance(speed,(float,int)) or not math.isfinite(speed) or not .67<=speed<=1.5 or type(trim) is not int or type(length) is not int or trim<0 or trim+round((z-a)*speed)>length:
+            if not isinstance(speed,(float,int)) or not math.isfinite(speed) or not .67<=speed<=1.5 or type(trim) is not int or type(length) is not int or trim<0 or trim+int(math.floor((z-a)*speed+.5))>length:
                 raise ValueError('Invalid clip speed or trim')
             if not isinstance(c['path'],str): raise ValueError('Invalid media path')
         cursor=z

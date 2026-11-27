@@ -24,8 +24,12 @@ def probe(path):
         try: return float(value)
         except (ValueError, TypeError): return fallback
     duration=number(fmt.get('duration'),0)
+    rate=v.get('avg_frame_rate','0/1')
+    try:
+        n,d=rate.split('/');fps=float(n)/float(d)
+    except (AttributeError,ValueError,ZeroDivisionError):fps=0.
     origin=number(fmt.get('start_time'),0)
-    return dict(duration=duration,w=v.get('width',0),h=v.get('height',0),
+    return dict(duration=duration,w=v.get('width',0),h=v.get('height',0),fps=fps,
                 videoDuration=number(v.get('duration'),duration),
                 videoStart=number(v.get('start_time'),origin)-origin,
                 hasAudio=bool(a),audioDuration=number(a.get('duration'),duration),
@@ -39,6 +43,9 @@ def _us(value, label):
     return int(math.floor(value*1_000_000+.5))
 
 def request_from_plan(plan,name='Clipivo Replacement',audio='original',audio_file=None):
+    if plan.get('format') == 'clipivo.timeline.v1':
+        from .json_timeline_export import request
+        return request(plan,name,audio,audio_file,probe)
     from .footage import expand_plan
     import math
     if audio not in ('original','none','external'):
