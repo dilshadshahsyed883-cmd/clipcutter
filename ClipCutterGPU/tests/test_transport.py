@@ -48,6 +48,15 @@ class TransportTests(unittest.TestCase):
         with self.assertRaises(ApiError):self.w.purge(self.a,"wrong")
         self.w.purge(self.a,result["result_sha256"])
         self.assertFalse((self.root/self.a/"input").exists())
+        timing=self.w.snapshot(self.a)["timing"]
+        fields=("staging_at","queued_at","running_at","input_verified_at","processing_started_at",
+                "processing_finished_at","completed_at","purged_at")
+        values=[timing[name] for name in fields]
+        self.assertEqual(values,sorted(values))
+        self.assertEqual(self.w.create(self.a,manifest())["timing"],timing)
+        restored=Worker(self.root,lambda:True,launch=launch,concurrency=1)
+        self.addCleanup(restored.shutdown)
+        self.assertEqual(restored.snapshot(self.a)["timing"],timing)
         self.assertEqual(self.w.start(self.a)["state"],"completed")
         self.assertEqual(self.w.metrics()["undelivered"],0)
     def test_youtube_staged_contract(self):

@@ -57,7 +57,14 @@ class Worker:
         if a not in self.records:raise ApiError(404,"Attempt not found")
         return self.records[a]
     def change(self,rec,**kw):
-        new={**rec,**kw,"updated_at":time.time()}
+        now=time.time()
+        timing=dict(rec.get("timing",{}))
+        if "state" in kw and kw["state"]!=rec.get("state"):
+            timing.setdefault(kw["state"]+"_at",now)
+        if kw.get("purged") and not rec.get("purged"):
+            timing.setdefault("purged_at",now)
+        timing.update(kw.pop("timing",{}))
+        new={**rec,**kw,"timing":timing,"updated_at":now}
         p=self.folder(new["attempt_id"])
         with (p/"state.tmp").open("wb") as f:
             f.write(canonical(new));f.flush();os.fsync(f.fileno())
@@ -109,7 +116,7 @@ class Worker:
                 (p/"input").mkdir(mode=0o700);(p/"input"/"job.json").write_bytes(canonical(manifest["job"]))
                 rec={"attempt_id":a,"job_id":job.job_id,"action":action,"state":"staging","files":files,
                     "manifest":manifest,"fingerprint":fingerprint,"purged":False}
-                self.change(rec);self.records[a]=rec
+                self.change(rec,timing={"staging_at":time.time()});self.records[a]=rec
             except Exception:shutil.rmtree(p);raise
             return self.snapshot(a)
     def put(self,a,name,offset,data,sha):
@@ -151,7 +158,9 @@ class Worker:
                 self.change(rec,state="running");action=rec["action"];files=rec["files"]
             for n,x in files.items():
                 if digest(root/n,lambda:self.cancelled(a))!=x["sha256"]:raise ValueError("Staged digest mismatch: "+n)
+            with self.lock:self.change(self.get(a),timing={"input_verified_at":time.time(),"processing_started_at":time.time()})
             self.launch(a,root,action)
+            with self.lock:self.change(self.get(a),timing={"processing_finished_at":time.time()})
             p=root/{"scan":"scan-result.json","export":"export-result.json","analyze":"analysis-result.json"}[action]
             if not p.is_file() or p.stat().st_size>MAX_JSON:raise RuntimeError("Missing or oversized result manifest")
             result=json.loads(p.read_text())
