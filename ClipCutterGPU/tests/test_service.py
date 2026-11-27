@@ -67,6 +67,15 @@ class DualStackServiceTests(unittest.TestCase):
                     self.assertEqual(code, 200)
                     self.assertTrue(data["ready"])
 
+    def test_startup_measurement_on_authenticated_capabilities(self):
+        with patch.object(service,"warmup",return_value={"provider":"CUDAExecutionProvider"}),patch.object(service.time,"monotonic",side_effect=[10.,17.25]):
+            service.initialize()
+        code,data=self.get("127.0.0.1","/api/capabilities","t"*32)
+        self.assertEqual(code,200)
+        self.assertTrue(data["ready"])
+        self.assertRegex(data["boot_id"],r"^[a-f0-9]{32}$")
+        self.assertEqual(data["warmup_seconds"],7.25)
+
     def test_dual_stack_configuration_failure_is_explicit(self):
         server = service.DualStackHTTPServer(("::", 0), service.Handler, bind_and_activate=False)
         self.addCleanup(server.server_close)

@@ -14,6 +14,7 @@ import httpx
 from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent, group_blocker, scheduled_scaling_disabled
 from .store import safe_dir
 from .eligibility import blocker
+from .performance import record_startup
 
 class LifecycleError(RuntimeError):pass
 
@@ -120,19 +121,19 @@ class Lifecycle:
             if group.get("pending_change"):return done("group_change_pending")
             if state=="stopped":
                 if r.get("stop_intent"):
-                    r.pop("stop_intent",None);r.pop("start_intent",None)
+                    r.pop("stop_intent",None);r.pop("start_intent",None);r.pop("start_requested_at",None)
                     return done("stopped")
                 if r.get("start_intent"):return done("start_pending_confirmation")
                 if manual=="stop":return done("stopped")
                 if paused or work["intake"] or work["busy"]:return done("waiting_for_drive_or_reconciliation")
                 if manual!="start" and not self.cfg.auto_start:return done("manual_mode")
                 if not work["eligible"] and manual!="start":return done("idle_stopped")
-                r["start_intent"]=True
+                r["start_intent"]=True;r["start_requested_at"]=now
                 # Recheck ledger before mutating. Atomic cross-admission gate still required
                 # before enabling live scheduler.
                 latest=self._work()
                 if latest["intake"] or latest["busy"]:
-                    r.pop("start_intent",None);return done("waiting_for_drive_or_reconciliation")
+                    r.pop("start_intent",None);r.pop("start_requested_at",None);return done("waiting_for_drive_or_reconciliation")
                 return self._post(r,"start")
             if state not in ("running","deploying"):return done("waiting_for_group")
             if r.get("stop_intent"):return done("stop_pending_confirmation")
@@ -146,6 +147,8 @@ class Lifecycle:
             stage=inst.get("state")
             if stage=="running" and inst.get("ready") is True:
                 caps=self.worker.capabilities() # exact worker source + protocol + authenticated health
+                record_startup(self.store,caps,now,r.get("start_requested_at") if r.get("start_intent") else None)
+                r.pop("start_requested_at",None)
                 r.update(start_intent=False,attempts=0,accepted=True,progress=100,
                          pipeline_version=caps.get("pipeline_version"),concurrency=caps.get("concurrency",1),
                          worker_counts={k:caps.get(k) for k in ("active_renders","staging","undelivered")})
