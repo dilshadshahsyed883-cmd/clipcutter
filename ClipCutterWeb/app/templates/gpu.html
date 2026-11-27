@@ -37,5 +37,10 @@
     <div class="studio-actions"><button type="button" id="gpu-start" disabled>Start Worker</button><button type="button" id="gpu-stop" disabled>Stop Worker</button><button type="button" id="gpu-retry" disabled>Retry Worker Action</button><button type="button" id="gpu-pause" disabled>Pause Queue</button><button type="button" id="gpu-resume" disabled>Resume Queue</button><span id="gpu-action-status" role="status" aria-live="polite"></span></div>
 
   </section>
+  <section class="content-card studio-card">
+    <h2>GPU Performance Report</h2>
+    <p class="studio-note">Combined performance of Clip Extractor and Person Analyzer.</p>
+    <form class="studio-actions" method="get" action="/api/v1/studio/performance-report"><label for="report-hours">Performance report</label><select id="report-hours" name="hours"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option></select><button type="submit" class="studio-secondary">Download Report</button></form>
+  </section>
 </div>
-<script defer src="/static/gpu.js?v=20261126-gpu-controls-2"></script>
+<script defer src="/static/gpu.js?v=20261128-idle-poll-1"></script>
