@@ -1,3 +1,9 @@
+# 2.3.2 standalone Timeline Builder — unreleased
+
+- Normal desktop startup opens only Timeline Builder, without initializing a face engine.
+- Read-only analyzer JSON, recursive folder mapping, gap/reuse/speed controls, editable timeline, save/reopen/relink/autosave, strict gap-preserving native CapCut adapter.
+- Historical source and data retained; no EXE build. Windows and native CapCut acceptance pending.
+
 # 2.3.2 — unreleased development
 
 - Align active version metadata and documentation; archive 2.3.1 source unchanged.

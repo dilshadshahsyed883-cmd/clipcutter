@@ -1,6 +1,6 @@
 # Clipivo V2.3.2 / Clipcutter — unreleased development checkpoint
 
-V2.3.2 focuses on Person Analyzer JSON-driven timeline building. Implementation and acceptance are pending; see PLAN_2_3_2.md. The existing 2.3.1 workflow below is historical baseline behavior.
+V2.3.2 opens only the standalone Timeline Builder; Clip Extractor and Person Analyzer are removed from the active UI. Import existing analysis.json, choose a footage root, generate, review/edit, save and export a native CapCut draft. Existing data is preserved; no analysis or EXE build. Source implementation added; Windows and CapCut acceptance pending. See PLAN_2_3_2.md. The existing 2.3.1 workflow below is historical baseline behavior.
 
 One Qt desktop application with Clip Extractor, Person Analyzer, Replacement Studio, Batch, People Library and Settings. It reuses the original Clipivo layout shown in the owner's reference screenshot.
 

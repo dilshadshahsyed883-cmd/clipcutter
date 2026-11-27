@@ -31,4 +31,4 @@ Desktop `v22/analyzer.py` saves `analysis.json` with `version: 2`, `source`, `du
 9. Separate timeline JSON, reopen, missing media, relink and autosave; source immutable.
 10. CapCut draft with empty gap positions, optional original audio and full duration; no video encoding.
 
-Status: initial JSON core and tests added; UI and native CapCut integration are separate implementation steps. No build or release certification.
+Status: standalone desktop Timeline Builder, JSON core, editable timeline, persistence and gap-aware CapCut adapter implemented in source. Legacy Extractor/Analyzer source retained but not launched or exposed. Existing tests added; full Windows and native CapCut acceptance still pending. No build or release certification.
