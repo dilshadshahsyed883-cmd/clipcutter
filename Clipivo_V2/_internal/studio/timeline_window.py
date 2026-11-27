@@ -58,7 +58,7 @@ class TimelineWindow(QMainWindow):
         self.imported=None;self.plan=None;self.folder=None;self.autosave_path=None;self.saved_path=None;self.operation=''
         self.task=Task(self);self.task.done.connect(self.done);self.task.failed.connect(self.error);self.task.finished.connect(self.finished);self.task.progress.connect(self.progress)
         self.buttons=[]
-        center=QWidget();self.setCentralWidget(center);layout=QVBoxLayout(center)
+        center=QWidget();center.setObjectName('root');self.setCentralWidget(center);layout=QVBoxLayout(center)
         bar=QHBoxLayout();layout.addLayout(bar)
         for name,fn in [('Import analysis.json',self.import_json),('Main footage folder',self.choose_folder),('Generate / regenerate',self.generate),('Open timeline',self.open_saved),('Save timeline',self.save),('Relink folder',self.relink),('About',lambda:AboutDialog(self).exec())]:
             self.button(bar,name,fn)
@@ -193,7 +193,14 @@ class TimelineWindow(QMainWindow):
     def manual(self):
         i,row=self.row()
         if row is None:return
-        p,_=QFileDialog.getOpenFileName(self,'Manual footage (including main folder)',self.folder or '', 'Video (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mts *.m2ts *.mpg *.mpeg)')
+        choices={m['relative']:m['path'] for m in self.plan.get('media',[]) if Path(m['path']).is_file()}
+        browse='[Browse other authorized footage]'
+        if choices:
+            label,ok=QInputDialog.getItem(self,'Scanned footage','Choose root or person-subfolder footage',[browse]+sorted(choices),0,False)
+            if not ok:return
+            p=choices.get(label)
+        else:p=None
+        if not p:p,_=QFileDialog.getOpenFileName(self,'Manual footage (including main folder)',self.folder or '', 'Video (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mts *.m2ts *.mpg *.mpeg)')
         if not p:return
         try:
             path=Path(p).resolve();info=probe(str(path));length=row['end']-row['start'];duration=min(t.us(info['duration']),t.us(info['videoDuration']))
@@ -238,8 +245,9 @@ class TimelineWindow(QMainWindow):
         p,_=QFileDialog.getOpenFileName(self,'Saved timeline','','JSON (*.json)')
         if not p:return
         try:
-            self.plan=t.open_plan(p);self.imported={k:self.plan[k] for k in ('analysis_path','analysis_sha256','reference','people','intervals')}
-            self.folder=self.plan['root'];self.new_autosave();self.saved_path=p
+            loaded=t.open_plan(p);imported={k:loaded[k] for k in ('analysis_path','analysis_sha256','reference','people','intervals')}
+            cfg=loaded['options'];folder=loaded['root']
+            self.plan=loaded;self.imported=imported;self.folder=folder;self.new_autosave();self.saved_path=p
             cfg=self.plan['options'];self.minimum.setValue(cfg['minimum']/t.US);self.maximum.setValue(cfg['maximum']/t.US);self.fill.setChecked(cfg['gap_fill']);self.gap.setValue(cfg['gap_max']/t.US);self.speed_on.setChecked(cfg['speed_adjust']);self.slow.setValue(cfg['min_speed']);self.fast.setValue(cfg['max_speed']);self.reuse.setChecked(cfg['reuse']);self.audio.setChecked(self.plan.get('audio',True))
             self.heading.setText(Path(p).name);self.refresh();self.persist();self.status.setText('Timeline reopened; missing footage is red.')
         except Exception as exc:self.error(str(exc))

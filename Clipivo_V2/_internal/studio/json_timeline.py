@@ -179,7 +179,7 @@ def generate(imported, folder, media, cfg, seed, cancel=lambda:False, warnings=(
             if row['selected'] is None: previous=None
             rows.append(row)
     plan={**imported,'format':FORMAT,'root':str(Path(folder).resolve()),'options':dict(cfg),
-          'seed':seed,'rows':rows,'warnings':list(warnings),'audio':True}
+          'seed':seed,'rows':rows,'media':list(media),'warnings':list(warnings),'audio':True}
     validate(plan)
     return plan
 
@@ -190,6 +190,13 @@ def validate(plan):
     if type(total) is not int or not 0<total<=86400*US: raise ValueError('Invalid duration')
     if type(plan['rows']) is not list or not plan['rows']: raise ValueError('Empty timeline')
     intervals=plan['intervals'];people=plan['people'];i=0;cursor=0
+    boundary=0
+    for interval in intervals:
+        a,z=interval['start'],interval['end']
+        if type(a) is not int or type(z) is not int or a!=boundary or not a<z<=total or not isinstance(interval['people'],list) or len(set(interval['people']))!=len(interval['people']) or any(p not in people for p in interval['people']):
+            raise ValueError('Invalid stored analyzer intervals')
+        boundary=z
+    if boundary!=total: raise ValueError('Incomplete analyzer intervals')
     for row in plan['rows']:
         a,z=row['start'],row['end']
         if type(a) is not int or type(z) is not int or a!=cursor or not a<z<=total:
@@ -238,8 +245,8 @@ def relink(plan, folder, probe):
     new=copy.deepcopy(plan)
     root=Path(folder).resolve(strict=True)
     if not root.is_dir(): raise ValueError('Choose a folder')
-    for row in new['rows']:
-        c=row.get('selected')
+    entries=[row.get('selected') for row in new['rows']]+new.get('media',[])
+    for c in entries:
         if not c or not c.get('relative'): continue
         p=(root/c['relative']).resolve()
         if not p.is_relative_to(root) or not p.is_file(): continue
