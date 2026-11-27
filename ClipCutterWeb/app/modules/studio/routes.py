@@ -14,6 +14,7 @@ from .lifecycle import LifecycleError
 from . import youtube
 from .review import Approval, get_review, approve, source_preview
 from .uploads import create_uploaded, discard_uploads
+from .person_extract import PersonExtraction, queue_person
 
 router=APIRouter(prefix="/api/v1/studio")
 def store(principal:Principal=Depends(current_principal)):
@@ -134,6 +135,10 @@ def review_source(job:str,s:Store=Depends(store)):
 
 @router.post("/requests/{job}/review",dependencies=[Depends(require_csrf)])
 def approve_review(job:str,value:Approval,s:Store=Depends(store)): return approve(s,job,value)
+
+@router.post("/requests/{job}/persons/{person}/extract",dependencies=[Depends(require_csrf)],status_code=201)
+def extract_person(job:str,person:str,data:PersonExtraction,s:Store=Depends(store)):
+    return queue_person(s,job,person,data)
 
 @router.get("/requests/{job}/outputs")
 def outputs(job:str,s:Store=Depends(store)): return names.visible(s,job)

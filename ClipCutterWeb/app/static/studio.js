@@ -285,6 +285,20 @@
       if(Number.isFinite(data.dominant_face_ratio))pane.append(put("p","Dominant area ratio: "+data.dominant_face_ratio+"x · Timelines are sample-based estimates."));
       for(const [reason,ranges] of Object.entries(data.excluded_intervals||{})){if(!Array.isArray(ranges))continue;const detail=document.createElement("details");detail.append(put("summary",reason.replaceAll("_"," ")+": "+ranges.length+" excluded ranges"));for(const range of ranges)if(Array.isArray(range)&&range.length===2&&range.every(Number.isFinite))detail.append(put("div",range[0].toFixed(2)+" – "+range[1].toFixed(2)+" s"));pane.append(detail);}
      if(!data.people.length)pane.append(put("p","No persons detected."));
+     const canExtract=data.timeline_precision==="sample-cell estimate";
+     const options=document.createElement("div");options.className="studio-grid";
+     function choice(label,values){const l=put("label",label),s=document.createElement("select");for(const [name,value] of values)s.add(new Option(name,value));l.append(s);options.append(l);return s;}
+     const gpu=choice("Extraction",[["GPU","true"],["VPS CPU","false"]]);
+     const stitched=choice("Output",[["Separate clips","false"],["Stitched video","true"]]);
+     const audio=choice("Audio",[["Include","true"],["Remove","false"]]);
+     const size=choice("Size limit",[["Original","0"],["720","720"],["1080","1080"],["1440","1440"]]);
+     const qualityLabel=put("label","Quality (%)"),quality=document.createElement("input");quality.type="number";quality.min="50";quality.max="100";quality.value="100";qualityLabel.append(quality);options.append(qualityLabel);
+     const folderLabel=put("label","Output Drive folder (optional)"),folder=document.createElement("input");folder.type="url";folder.maxLength=2048;folderLabel.append(folder);options.append(folderLabel);
+     if(canExtract&&data.people.some(p=>!p.filtered&&Array.isArray(p.segments)&&p.segments.length)){
+       const source=await api("/requests/"+job);if(stamp!==seq)return;
+       if(source.input.source_kind==="youtube"){audio.value="false";audio.disabled=true;}
+       pane.append(put("h3","Extract accepted timelines"),put("p","Exact cut · Whole picture · Verified VPS source reused. No repeat scan."),options);
+     }
      for(const p of data.people){
        const segs=Array.isArray(p.segments)?p.segments.filter(x=>Array.isArray(x)&&x.length===2&&x.every(Number.isFinite)&&x[1]>=x[0]):[];
        const duration=segs.reduce((n,x)=>n+x[1]-x[0],0);
@@ -293,6 +307,18 @@
         row.append(put("strong",String(p.name||p.id||"Person")),put("span",p.filtered?"Filtered":"Appearance: "+duration.toFixed(2)+" s"),put("span",segs.length+" ranges"));
         if(Number.isFinite(data.duration)&&data.duration>0&&segs.length){const line=put("div","");line.className="studio-person-timeline";for(const [a,b] of segs){const seg=put("span","");seg.style.left=(100*a/data.duration)+"%";seg.style.width=(100*(b-a)/data.duration)+"%";seg.title=a.toFixed(2)+" – "+b.toFixed(2)+" s";line.append(seg);}row.append(line);}
        if(segs.length){const detail=document.createElement("details");detail.append(put("summary","Appearance ranges"));for(const [a,b] of segs)detail.append(put("div",a.toFixed(2)+" – "+b.toFixed(2)+" s"));row.append(detail);}
+       if(canExtract&&!p.filtered&&segs.length&&typeof p.id==="string"){
+         let requestKey=null,fingerprint=null;
+         const note=put("span","");note.setAttribute("role","status");
+         const extract=button("Extract Clips",async()=>{
+           if(!quality.checkValidity()||!folder.checkValidity()){note.textContent="Check quality and output folder.";return;}
+           const payload={gpu_clip_extraction:gpu.value==="true",stitched:stitched.value==="true",include_audio:audio.value==="true",quality:Number(quality.value),max_short_side:Number(size.value),output_folder:folder.value.trim()||null};
+           const current=JSON.stringify(payload);if(current!==fingerprint||!requestKey){requestKey=crypto.randomUUID().replaceAll("-","");fingerprint=current;}
+           extract.disabled=true;note.textContent="Verifying retained source…";
+           try{const result=await api("/requests/"+job+"/persons/"+encodeURIComponent(p.id)+"/extract","POST",{...payload,request_id:requestKey});note.textContent="Queued: "+result.id.slice(0,8)+" · Open Clip Extractor queue.";}
+           catch(e){note.textContent=e.message;}finally{extract.disabled=false;}
+         });row.append(extract,note);
+       }
        pane.append(row);
      }
    }catch(e){if(stamp===seq)pane.textContent=e.message;}
