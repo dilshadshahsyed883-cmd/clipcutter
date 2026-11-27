@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
+from .performance import report
 from starlette.background import BackgroundTask
 from . import identity_library as lib, output_names as names
 from typing import Literal
@@ -91,6 +92,11 @@ def intake(job:str,s:Store=Depends(store)):
             raise HTTPException(409,"Retry is available only for failed input downloads")
         s.transition(job,"failed","awaiting_input","Queued for input retry")
     return {"accepted":True}
+
+@router.get("/performance-report")
+def performance_report(hours:Literal["1","24","168"]="24",s:Store=Depends(store)):
+    return PlainTextResponse(report(s,int(hours)),headers={"Content-Disposition":"attachment; filename=clipcutter-performance.txt",
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"})
 
 @router.get("/requests/{job}")
 def detail(job:str,s:Store=Depends(store)): return s.get(job)

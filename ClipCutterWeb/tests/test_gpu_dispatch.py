@@ -76,6 +76,25 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(self.client.purges,1)
         self.assertEqual(self.client.creates,1)
         self.assertEqual(self.store.output_path(self.jid,"analysis.json")[0].read_bytes(),OUT)
+    def test_performance_report_survives_purge_and_restart(self):
+        from app.modules.studio.performance import report
+        self.dispatch.tick(self.jid);self.dispatch.tick(self.jid)
+        self.client.finish()
+        self.client.remote["timing"]={"staging_at":100,"queued_at":105,"running_at":106,
+            "input_verified_at":107,"processing_started_at":107,"processing_finished_at":120,
+            "completed_at":121,"secret":"never export"}
+        with patch("app.modules.studio.dispatch.RESERVE",0):
+            self.dispatch.tick(self.jid);self.dispatch.tick(self.jid)
+        self.client.remote["timing"]["purged_at"]=125
+        Dispatcher(self.store,self.client).tick(self.jid)
+        value=report(Store("owner",self.store.root.parent.parent),24)
+        self.assertIn(self.jid,value)
+        self.assertIn("13.000 s",value)
+        self.assertIn("25.000 s",value)
+        self.assertNotIn("never export",value)
+        self.assertNotIn(self.client.origin,value)
+        self.assertNotIn(self.jid,report(Store("other",self.store.root.parent.parent),24))
+
     def test_gpu_upload_progress_tracks_acknowledged_bytes_across_restart(self):
         def put(a,n,offset,data):
             self.assertEqual(data,VIDEO[offset:offset+len(data)])
