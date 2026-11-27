@@ -3,6 +3,10 @@
   const stringKeys = ["salad_organization","salad_project","salad_container_group","worker_gateway"];
   const numberKeys = ["image_pull_threshold","image_pull_seconds","salad_max_reallocations","salad_reallocate_cooldown","parallel"];
   let csrf = null, saving = false, refreshing = false, acting = false, configured = false;
+  let instanceSignature = null, manualRefreshPending = false;
+  function setText(id,value){const el=$(id);if(el.textContent!==value)el.textContent=value;}
+  function setDisabled(id,value){const el=$(id);if(el.disabled!==value)el.disabled=value;}
+  function clearInstances(){if($("gpu-instances").children.length)$("gpu-instances").replaceChildren();instanceSignature=null;}
   async function api(path, method="GET", data) {
     const headers = {Accept:"application/json"};
     if (method !== "GET") {
@@ -41,9 +45,9 @@
     const enabled=cfg.dispatch_enabled===true,s=cfg.scheduler||{};
     for(const action of ["start","stop","retry","pause","resume"]){
       const queueAction=action==="pause"||action==="resume";
-      $("gpu-"+action).disabled=acting||(!queueAction&&!enabled)||(["start","stop"].includes(action)&&cfg.auto_start)||(action==="pause"&&s.paused)||(action==="resume"&&(!s.paused||s.action==="stop"));
+      setDisabled("gpu-"+action,acting||(!queueAction&&!enabled)||(["start","stop"].includes(action)&&cfg.auto_start)||(action==="pause"&&s.paused)||(action==="resume"&&(!s.paused||s.action==="stop")));
     }
-    $("gpu-capability").textContent=(enabled?"Scheduler enabled":"Scheduler gated")+" · Queue: "+(s.paused?"Paused":"Active")+" · "+(s.status||"offline");
+    setText("gpu-capability",(enabled?"Scheduler enabled":"Scheduler gated")+" · Queue: "+(s.paused?"Paused":"Active")+" · "+(s.status||"offline"));
     $("gpu-capability").title=cfg.message;
   }
   for(const action of ["start","stop","retry","pause","resume"]){
@@ -66,23 +70,36 @@
     data.auto_start=f.auto_start.value==="true";
     saving=true;fields.disabled=true;
     $("gpu-save-status").textContent="Saving…";
-    try{const cfg=await api("/config","POST",data);apply(cfg);$("gpu-save-status").textContent=cfg.dispatch_enabled?"Saved.":"Saved. GPU scheduler not active.";$("gpu-status").textContent="Status not checked for saved configuration.";$("gpu-instances").replaceChildren();}
+    try{const cfg=await api("/config","POST",data);apply(cfg);$("gpu-save-status").textContent=cfg.dispatch_enabled?"Saved.":"Saved. GPU scheduler not active.";setText("gpu-status","Status not checked for saved configuration.");clearInstances();}
     catch(error){$("gpu-save-status").textContent=error.message;}
     finally{fields.disabled=false;saving=false;}
   });
   async function refreshStatus(live=false){
-    if(refreshing||saving||!configured||document.hidden)return;refreshing=true;$("gpu-refresh").disabled=true;
-    if(!$("gpu-instances").children.length)$("gpu-status").textContent="Checking SaladCloud…";
+    if(saving||!configured||document.hidden)return;
+    if(refreshing){if(live)manualRefreshPending=true;return;}
+    refreshing=true;
+    if(live){setDisabled("gpu-refresh",true);setText("gpu-status","Checking SaladCloud…");}
     try{
       const result=await api(live?"/status":"/status/cached");
-      $("gpu-status").textContent=(result.observed_at?"Last checked: "+new Date(result.observed_at*1000).toLocaleString()+" | ":"")+"Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Blocked: "+(result.group_blocker||"group settings not verified"));
-      $("gpu-instances").replaceChildren();
-      for(const item of result.instances){const tr=document.createElement("tr");
-        for(const val of [item.id,item.state,item.pulling_progress===null?null:item.pulling_progress+"%",item.ready,item.update_time]){const td=document.createElement("td");td.textContent=String(val??"Unknown");tr.append(td);}
-        $("gpu-instances").append(tr);
+      if(saving)return;
+      const message=(result.observed_at?"Last checked: "+new Date(result.observed_at*1000).toLocaleString()+" | ":"")+"Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Blocked: "+(result.group_blocker||"group settings not verified"));
+      setText("gpu-status",message);
+      const rows=result.instances||[],signature=JSON.stringify(rows);
+      if(signature!==instanceSignature){
+        const fragment=document.createDocumentFragment();
+        for(const item of rows){const tr=document.createElement("tr");
+          for(const val of [item.id,item.state,item.pulling_progress===null?null:item.pulling_progress+"%",item.ready,item.update_time]){const td=document.createElement("td");td.textContent=String(val??"Unknown");tr.append(td);}
+          fragment.append(tr);
+        }
+        if(rows.length||$("gpu-instances").children.length)$("gpu-instances").replaceChildren(fragment);
+        instanceSignature=signature;
       }
-    }catch(error){$("gpu-status").textContent="Status unavailable: "+error.message;$("gpu-instances").replaceChildren();}
-    finally{refreshing=false;$("gpu-refresh").disabled=!configured;}
+    }catch(error){if(!saving){setText("gpu-status","Status unavailable: "+error.message);clearInstances();}}
+    finally{
+      refreshing=false;
+      if(live)setDisabled("gpu-refresh",!configured);
+      if(manualRefreshPending){manualRefreshPending=false;void refreshStatus(true);}
+    }
   }
   $("gpu-refresh").addEventListener("click",()=>refreshStatus(true));
   api("/config").then(cfg=>{apply(cfg);return refreshStatus();}).catch(error=>{$("gpu-capability").textContent=error.message;});
