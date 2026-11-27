@@ -11,7 +11,7 @@ import re
 import time
 from uuid import UUID
 import httpx
-from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent, group_blocker, scheduled_scaling_disabled
+from .gpu import SALAD_API, _salad_get, group_path, image_pull_percent, group_blocker, scheduled_scaling_disabled, status_view, cache_status, cached_status
 from .store import safe_dir
 from .eligibility import blocker
 from .performance import record_startup
@@ -59,6 +59,7 @@ class Lifecycle:
     def __init__(self,store,cfg,api,worker,clock=time.time):
         self.store=store;self.cfg=cfg;self.api=api;self.worker=worker;self.clock=clock
         self.idle_since=None
+        self.confirmed_stopped=False
         with store.connect() as c:
             c.execute("CREATE TABLE IF NOT EXISTS gpu_lifecycle (id INTEGER PRIMARY KEY CHECK(id=1), record TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO gpu_lifecycle VALUES(1,'{}')")
@@ -95,14 +96,14 @@ class Lifecycle:
         except (httpx.HTTPError,LifecycleError,ValueError):
             return self._save(r,action+"_pending_confirmation")
         return self._save(r,action+"_pending_confirmation")
-    def tick(self,*,paused=False,manual=None):
+    def tick(self,*,paused=False,manual=None,force=False):
         if manual not in (None,"start","stop"):raise LifecycleError("Invalid manual action")
         lockdir=safe_dir(self.store.root/"lifecycle-locks")
         with os.fdopen(os.open(lockdir/"lifecycle.lock",os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),"a") as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return "busy"
-            return self._tick(paused,manual)
-    def _tick(self,paused,manual):
+            return self._tick(paused,manual,force)
+    def _tick(self,paused,manual,force=False):
         now=self.clock();r=self._record()
         def done(state,reset_idle=True):
             if reset_idle:self.idle_since=None
@@ -110,14 +111,31 @@ class Lifecycle:
         if r.get("group") not in (None,self.api.path):return done("group_changed_reconcile")
         r["group"]=self.api.path
         if manual and self.cfg.auto_start:return done("select_manual_mode")
-        if now<r.get("poll_after",0):return r.get("status","waiting")
-        r["poll_after"]=now+3
         work=self._work()
+        wake=force or manual is not None or r.get("start_intent") or r.get("stop_intent") or work["busy"] or (
+            self.cfg.auto_start and not paused and work["eligible"] and not work["intake"])
+        if self.confirmed_stopped and not wake:
+            view=cached_status(self.store,self.api.path)
+            if view.get("status")=="stopped":
+                reason=view.get("group_blocker")
+                if reason:return done(reason)
+                if paused or work["intake"]:return done("waiting_for_drive_or_reconciliation")
+                return done("idle_stopped" if self.cfg.auto_start else "manual_mode")
+        if not force and now<r.get("poll_after",0):return r.get("status","waiting")
+        r["poll_after"]=now+3
+        self.confirmed_stopped=False
+        observed=time.time()
         try:
             group=self.api.group()
+            view=status_view(group,self.api.image)
+            cache_status(self.store,self.api.path,view,observed)
             reason=group_blocker(group,self.api.image)
-            if reason:return done(reason)
             state=group.get("current_state",{}).get("status")
+            # Only sleep after a fresh, confirmed stopped observation with no pending
+            # group changes or unsafe auto-start/scaling configuration.
+            self.confirmed_stopped=(state=="stopped" and not group.get("pending_change")
+                                    and reason in (None,"approved_gpu_image_mismatch"))
+            if reason:return done(reason)
             if group.get("pending_change"):return done("group_change_pending")
             if state=="stopped":
                 if r.get("stop_intent"):
@@ -128,6 +146,7 @@ class Lifecycle:
                 if paused or work["intake"] or work["busy"]:return done("waiting_for_drive_or_reconciliation")
                 if manual!="start" and not self.cfg.auto_start:return done("manual_mode")
                 if not work["eligible"] and manual!="start":return done("idle_stopped")
+                self.confirmed_stopped=False
                 r["start_intent"]=True;r["start_requested_at"]=now
                 # Recheck ledger before mutating. Atomic cross-admission gate still required
                 # before enabling live scheduler.
@@ -138,7 +157,9 @@ class Lifecycle:
             if state not in ("running","deploying"):return done("waiting_for_group")
             if r.get("stop_intent"):return done("stop_pending_confirmation")
             instances=self.api.instances()
-            if not isinstance(instances,list) or len(instances)!=1:return done("waiting_for_instance")
+            if not isinstance(instances,list):return done("waiting_for_instance")
+            cache_status(self.store,self.api.path,status_view(group,self.api.image,instances),observed)
+            if len(instances)!=1:return done("waiting_for_instance")
             inst=instances[0];ident=identity(inst);updated=timestamp(inst["update_time"],now)
             if ident!=r.get("instance"):
                 r.update(instance=ident,latest_update=None,download_transition=None,accepted=False,progress=None)
@@ -204,4 +225,5 @@ class Lifecycle:
             r["cooldown_until"]=now+self.cfg.salad_reallocate_cooldown
             return self._post(r,"reallocate",inst["id"])
         except (httpx.HTTPError,LifecycleError,RuntimeError,ValueError,TypeError,KeyError,AttributeError):
+            self.confirmed_stopped=False
             return done("api_or_worker_unavailable")
