@@ -12,6 +12,7 @@ from .gpu import GPUStore,group_path
 from .dispatch import Dispatcher,WorkerClient,DispatchError
 from .lifecycle import Lifecycle,SaladAPI,LifecycleError
 from .eligibility import blocker
+from .vps_export import local_row
 
 def authorized(store,cfg=None):
     return (os.environ.get("CLIPCUTTER_SCHEDULER_ENABLED")=="1" and
@@ -82,7 +83,7 @@ class Scheduler:
         self.store=store;self.cfg=cfg;self.api=api;self.worker=worker
         self.dispatch=Dispatcher(store,worker);self.lifecycle=Lifecycle(store,cfg,api,worker)
         self.control=Control(store)
-        self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix="gpu-lane")
+        self.pool=ThreadPoolExecutor(max_workers=4,thread_name_prefix="studio-lane")
         self.flights={};self.cursor=0;self.closing=False
         self.last_error=None;self.last_error_until=0
     def close(self):
@@ -138,6 +139,8 @@ class Scheduler:
             supported=type(capacity) is int and capacity>=limit and (limit==1 or pipeline)
             admit=not paused and action!="stop" and state in ("ready","worker_busy") and supported
             rows=self._jobs()
+            local=[x for x in rows if local_row(x)]
+            rows=[x for x in rows if not local_row(x)]
             active_phases={"create_intent","staging","start_intent","processing","output_ready","delivering","published","scan_receipt","review"}
             output_phases={"output_ready","delivering","published","scan_receipt","review"}
             upload_phases={"create_intent","staging"}
@@ -154,6 +157,14 @@ class Scheduler:
             def launch(lane,row,**kw):
                 if row and self._launch(lane,row["id"],limit=limit,**kw):
                     occupied.add(row["id"])
+            # Independent CPU lane; never occupies GPU render slots.
+            cpu=next((x for x in local if available(x) and
+                (x["command"] or x["phase"] in ("vps_processing","vps_delivering") or
+                 (not paused and action!="stop" and x["state"]=="ready" and self.eligible(x)))),None)
+            if cpu and "vps" not in self.flights:
+                self.flights["vps"]=(cpu["id"],self.pool.submit(self.dispatch.tick,cpu["id"],
+                    allow_start=not paused and action!="stop",allow_during_intake=True))
+                occupied.add(cpu["id"])
             # One download lane, one polling/control lane, one upload/start lane.
             # A legacy worker remains serial; existing jobs still reconcile while paused.
             if pipeline or not self.flights:

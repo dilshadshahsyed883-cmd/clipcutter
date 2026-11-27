@@ -70,7 +70,11 @@ class Lifecycle:
     def snapshot(self):return self._record()
     def _work(self):
         with self.store.connect() as c:
-            rows=c.execute("SELECT state,payload FROM requests WHERE owner=?",(self.store.owner,)).fetchall()
+            rows=c.execute("SELECT id,state,payload FROM requests WHERE owner=?",(self.store.owner,)).fetchall()
+            from .vps_export import local_row
+            table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
+            phases={x["job_id"]:x["phase"] for x in c.execute("SELECT job_id,phase FROM gpu_attempts")} if table else {}
+            rows=[x for x in rows if not local_row({**dict(x),"phase":phases.get(x["id"])})]
             states=[x["state"] for x in rows]
             eligible=0
             for x in rows:
@@ -79,7 +83,7 @@ class Lifecycle:
             # A failed/cancelled/review attempt may still contain unacknowledged data.
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
-            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT IN ('acknowledged','review_ready','new','cancelled_clean','failed_clean') LIMIT 1").fetchone())
+            unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT LIKE 'vps_%' AND phase NOT IN ('acknowledged','review_ready','new','cancelled_clean','failed_clean') LIMIT 1").fetchone())
         return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
             "busy":unresolved or any(s in ("processing","delivering") for s in states),
             "empty":not eligible and all(s in ("completed","failed","cancelled","deleted","review","batch_expanded","ready") for s in states) and not unresolved}

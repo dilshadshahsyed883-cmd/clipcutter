@@ -135,8 +135,9 @@ def approve(store,jid,approval):
         m["action"]="export";m["files"]["approved-review.json"]={"size":len(raw),"sha256":hashlib.sha256(raw).hexdigest()}
         mapping["approved-review.json"]="approved-review.json"
         c.execute("INSERT INTO gpu_scan_history VALUES (?,?,?,?,?)",(jid,a["attempt_id"],a["result_sha"],a["review_json"],canonical(ranges).decode()))
-        c.execute("UPDATE gpu_attempts SET attempt_id=?,manifest=?,mapping=?,phase='new',result_sha=NULL WHERE job_id=?",
-            (uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),jid))
+        phase="vps_new" if json.loads(job["payload"])["settings"].get("gpu_clip_extraction") is False else "new"
+        c.execute("UPDATE gpu_attempts SET attempt_id=?,manifest=?,mapping=?,phase=?,result_sha=NULL WHERE job_id=?",
+            (uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),phase,jid))
         c.execute("UPDATE requests SET state='ready',progress=100,message='Reviewed ranges approved; export queued',updated_at=? WHERE id=?",
             (int(time.time()),jid))
         return store.public(store.row(c,jid))

@@ -192,6 +192,8 @@ class Dispatcher:
             try:preflight(request["input"]["output_folder"])
             except DeliveryError as exc:raise DispatchError(str(exc)) from None
         settings=request["settings"]
+        # Execution location is Web-only metadata; keep existing GPU wire contract compatible.
+        local_export=settings.pop("gpu_clip_extraction",True) is False and settings.get("mode")=="manual"
         if settings["kind"]=="analyzer" and (settings.get("reference_link") or settings.get("reference_uploads")):raise DispatchError("Analyzer profile reference input is not implemented")
         root=safe_dir(self.store.root/"inputs"/jid)
         data=json.loads((root/"manifest.json").read_text())
@@ -219,7 +221,7 @@ class Dispatcher:
             if self.store.row(c,jid)["state"]!="ready" or (not allow_during_intake and self._pending(c)):raise DispatchError("Intake/queue state changed")
             if c.execute("SELECT 1 FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone():return
             c.execute("INSERT INTO gpu_attempts VALUES (?,?,?,?,?,?,?,NULL,NULL)",
-                      (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"new",self.client.expected_sha,self.client.origin))
+                      (jid,uuid4().hex,canonical(m).decode(),canonical(mapping).decode(),"vps_new" if local_export else "new",self.client.expected_sha,self.client.origin))
     def tick(self,jid,*,allow_start=True,allow_during_intake=False,render_limit=1,observe_only=False,may_start=None):
         if not ID.fullmatch(jid):raise DispatchError("Invalid job id")
         locks=safe_dir(self.store.root/"dispatch-locks")
@@ -228,9 +230,15 @@ class Dispatcher:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return "busy"
             row=self._row(jid)
+            if row and row["phase"].startswith("vps_"):
+                from .vps_export import tick as local_tick
+                return local_tick(self,jid,row,allow_start=allow_start)
             if not row:
                 if not allow_start or observe_only or (may_start and not may_start()):return "paused"
-                self.client.capabilities();self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
+                from .vps_export import local_job,tick as local_tick
+                if not local_job(self.store.get(jid)):self.client.capabilities()
+                self.prepare(jid,allow_during_intake=allow_during_intake);row=self._row(jid)
+                if row["phase"]=="vps_new":return local_tick(self,jid,row,allow_start=allow_start)
             command=self.command(jid)
             a=row["attempt_id"];m=json.loads(row["manifest"])
             if row["phase"]=="failed_clean" and command=="retry":
