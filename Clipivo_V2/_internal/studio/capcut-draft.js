@@ -134,21 +134,30 @@ function makePlan(payload, media) {
   const W = payload.W || 1920, H = payload.H || 1080, zoomMin = payload.zoomMinSec || 5;
   const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0, separateLayers: payload.separateLayers === true, singleVisualTrack: payload.singleVisualTrack === true };
   plan.strictTimeline = payload.strictTimeline === true;
+  plan.allowTimelineGaps = plan.strictTimeline && payload.allowTimelineGaps === true;
+  if (plan.allowTimelineGaps && (!Number.isFinite(payload.timelineDuration) || payload.timelineDuration <= 0)) throw Error('Invalid explicit timeline duration');
   let prev = 0;
   if (plan.strictTimeline) {
-    if (!Array.isArray(payload.images) || !payload.images.length) throw Error('No approved clips');
+    if (!Array.isArray(payload.images) || (!plan.allowTimelineGaps && !payload.images.length)) throw Error('No approved clips');
     let cursor = 0;
     for (const [i, c] of payload.images.entries()) {
       if (!c || !c.image || c.kind !== 'video' || !Number.isFinite(c.start) || !Number.isFinite(c.end) ||
-          us(c.start) !== cursor || c.start < 0 || us(c.end) <= cursor ||
+          (plan.allowTimelineGaps ? us(c.start) < cursor : us(c.start) !== cursor) || c.start < 0 || us(c.end) <= us(c.start) ||
           !Number.isFinite(c.trimStart) || c.trimStart < 0 ||
           !Number.isFinite(c.speed) || c.speed < 0.67 || c.speed > 1.5)
         throw Error('Invalid reviewed timeline at clip ' + (i + 1));
       const m = media[c.image];
-      const sourceEnd = us(c.trimStart) + us((us(c.end) - cursor) / US * c.speed);
+      const sourceEnd = us(c.trimStart) + us((us(c.end) - us(c.start)) / US * c.speed);
       if (!m || !Number.isFinite(m.duration) || sourceEnd > us(Math.min(m.duration, m.videoDuration ?? m.duration)))
         throw Error('Source range exceeds available video at clip ' + (i + 1));
+      if (plan.allowTimelineGaps && us(c.start)>cursor) plan.gaps++;
       cursor = us(c.end);
+    }
+    if (plan.allowTimelineGaps) {
+      const total=us(payload.timelineDuration);
+      if (cursor>total) throw Error('Clip exceeds explicit timeline duration');
+      if (cursor<total) plan.gaps++;
+      cursor=total;
     }
     if (payload.voice) {
       const a = payload.voice, m = media[a.file];
@@ -163,7 +172,7 @@ function makePlan(payload, media) {
   imgs.forEach((c, i) => {
     const start = Math.max(c.start, prev); if (start >= c.end) { warn(`Clip ${i + 1} overlaps the previous one completely and was skipped.`); return; }
     const dur = plan.strictTimeline ? (us(c.end) - us(start)) / US : +(c.end - start).toFixed(3), info = media[c.image] || {};
-    if (start - prev > 0.05) plan.gaps++;
+    if (!plan.allowTimelineGaps && start - prev > 0.05) plan.gaps++;
     const m = motionOf(c, dur, zoomMin);
     plan.images.push({ n: plan.images.length + 1, file: c.image, kind: c.kind === 'video' ? 'video' : 'photo', start, dur, trimStart: c.trimStart || 0, speed: c.speed || 1, w: info.w || 0, h: info.h || 0, mediaDur: info.duration || 0, hasAudio: c.kind === 'video' && c.hasAudio !== false && info.hasAudio !== false,
       volume: c.kind === 'video' ? (c.muted ? 0 : (c.volume != null ? +c.volume : 1)) : 0, m, transOut: c.transOut || null, filter: c.filter, effects: c.effects, adjust: c.adjust, crop: c.crop });
@@ -177,6 +186,7 @@ function makePlan(payload, media) {
   txt(payload.captions, plan.captions); txt(payload.titles, plan.titles);
   plan.captions.sort((a, b) => a.start - b.start); plan.titles.sort((a, b) => a.start - b.start);
   plan.total = Math.max(0, ...plan.images.map(c => c.start + c.dur), ...plan.voice.concat(plan.music, plan.sfx).map(a => a.start + a.dur), ...plan.captions.concat(plan.titles).map(t => t.end));
+  if (plan.allowTimelineGaps) plan.total = us(payload.timelineDuration)/US;
   // what CapCut cannot receive from here (CapCut has its own versions: re-apply them there)
   const n = (f) => plan.images.filter(f).length;
   const tN = n(c => c.transOut), fN = n(c => c.filter && c.filter.id), eN = n(c => (c.effects || []).some(e => e && !e.off)), aN = n(c => c.adjust && Object.values(c.adjust).some(v => v)), cN = n(c => c.crop && (c.crop.l || c.crop.t || c.crop.r || c.crop.b));
@@ -282,7 +292,7 @@ function buildContent(plan, files, timelineId) {
     : [{ clips: plan.images, name: plan.singleVisualTrack ? 'Images + Videos - Single Layer' : '' }];
   // Avoid an empty base track when a project contains only one media kind.
   for (const group of visualGroups) {
-    if (!group.clips.length) continue;
+    if (!group.clips.length && !plan.allowTimelineGaps) continue;
     const main = trackOf('video', group.name);
     const baseTrack = ti === 0;
     for (const c of group.clips) {
@@ -311,9 +321,9 @@ function buildContent(plan, files, timelineId) {
     tracks.push(t); ti++;
   };
   text(plan.captions, 'Z Studio Captions', true); text(plan.titles, 'Z Studio Titles', false);
-  const total = tracks.reduce((m, t) => Math.max(m, ...t.segments.map(s => s.target_timerange.start + s.target_timerange.duration)), 0);
+  const total = plan.allowTimelineGaps ? us(plan.total) : tracks.reduce((m, t) => Math.max(m, ...t.segments.map(s => s.target_timerange.start + s.target_timerange.duration)), 0);
   return { id: timelineId, version: 360000, new_version: '185.0.0', name: '', duration: total, create_time: 0, update_time: 0, fps: plan.fps, is_drop_frame_timecode: false, color_space: 0,
-    config: { video_mute: false, record_audio_last_index: 1, extract_audio_last_index: 1, original_sound_last_index: 1, subtitle_recognition_id: '', subtitle_taskinfo: [], lyrics_recognition_id: '', lyrics_taskinfo: [], subtitle_sync: true, lyrics_sync: true, voice_change_sync: false, sticker_max_index: 1, adjust_max_index: 1, material_save_mode: 0, export_range: null, maintrack_adsorb: !plan.gaps && !plan.separateLayers, combination_max_index: 1, attachment_info: [], zoom_info_params: null, system_font_list: [], multi_language_mode: 'none', multi_language_main: 'none', multi_language_current: 'none', multi_language_list: [], subtitle_keywords_config: null, use_float_render: false, hdr_vivid: false },
+    config: { video_mute: false, record_audio_last_index: 1, extract_audio_last_index: 1, original_sound_last_index: 1, subtitle_recognition_id: '', subtitle_taskinfo: [], lyrics_recognition_id: '', lyrics_taskinfo: [], subtitle_sync: true, lyrics_sync: true, voice_change_sync: false, sticker_max_index: 1, adjust_max_index: 1, material_save_mode: 0, export_range: null, maintrack_adsorb: !plan.allowTimelineGaps && !plan.gaps && !plan.separateLayers, combination_max_index: 1, attachment_info: [], zoom_info_params: null, system_font_list: [], multi_language_mode: 'none', multi_language_main: 'none', multi_language_current: 'none', multi_language_list: [], subtitle_keywords_config: null, use_float_render: false, hdr_vivid: false },
     canvas_config: { ratio: 'original', width: plan.W, height: plan.H, background: null }, tracks, group_container: null, materials: M, keyframes: { videos: [], audios: [], texts: [], stickers: [], filters: [], adjusts: [], handwrites: [], effects: [] }, keyframe_graph_list: [], platform: platform(), last_modified_platform: platform(),
     mutable_config: null, cover: null, retouch_cover: null, extra_info: null, relationships: [], mixed_track_mode_on: false, render_index_track_mode_on: true, free_render_index_mode_on: false, static_cover_image_path: '', source: 'default', time_marks: null, path: '', lyrics_effects: [], uneven_animation_template_info: { composition: '', content: '', order: '', sub_template_info_list: [] },
     draft_type: 'video', smart_ads_info: { page_from: '', routine: '', draft_url: '' },
@@ -331,7 +341,7 @@ function copyMedia(plan, mediaDir) {
   return files;
 }
 function writeProject({ plan, drafts, folderName }) {
-  if (!plan.images.length && !plan.voice.length) throw new Error('There is nothing to send: add pictures or a voiceover to the timeline first.');
+  if (!plan.allowTimelineGaps && !plan.images.length && !plan.voice.length) throw new Error('There is nothing to send: add pictures or a voiceover to the timeline first.');
   fs.mkdirSync(drafts, { recursive: true });
   drafts = path.resolve(drafts);
   const name = plan.strictTimeline ? safeName(folderName || plan.name, 'Clipivo Replacement') + ' - ' + crypto.randomUUID().slice(0, 12) : uniqueFolder(drafts, folderName || plan.name), stage = path.join(drafts, '.zs-staging-' + crypto.randomBytes(4).toString('hex')), finalDir = path.join(drafts, name);
@@ -444,7 +454,8 @@ function verifyStrictProject(folder, plan, files, publishedFolder = folder) {
     check(JSON.stringify(c) === JSON.stringify(nested), 'Nested timeline differs from top-level timeline');
     check(JSON.stringify(c) === JSON.stringify(read('draft_content.json.bak')), 'Top-level backup mismatch');
     check(JSON.stringify(c) === JSON.stringify(read(path.join('Timelines', c.id, 'draft_content.json.bak'))), 'Nested backup mismatch');
-    const total = us(plan.images[plan.images.length - 1].start) + us(plan.images[plan.images.length - 1].dur);
+    const total = plan.allowTimelineGaps ? us(plan.total) : us(plan.images[plan.images.length - 1].start) + us(plan.images[plan.images.length - 1].dur);
+    if (plan.allowTimelineGaps) check(c.config.maintrack_adsorb === false, 'Gap timeline must disable main-track snapping');
     check(c.duration === total && meta.tm_duration === total, 'Timeline or metadata duration mismatch');
     check(c.canvas_config.width === plan.W && c.canvas_config.height === plan.H && c.fps === plan.fps, 'Canvas or FPS mismatch');
     check(meta.draft_fold_path === slash(publishedFolder), 'Draft metadata folder mismatch');

@@ -64,3 +64,7 @@ See PLAN_2_3_1.md. Central lookup, simplified generation and analyzer controls a
 ## 2.3.2 development checkpoint (unreleased)
 
 Version metadata and scope are aligned. JSON-driven timeline implementation and acceptance remain pending; see PLAN_2_3_2.md. Historical 2.3.1 test results are not 2.3.2 acceptance.
+
+## 2.3.2 standalone timeline source implementation
+
+Ten owner-approved rules recorded. Normal desktop launch now opens only the Timeline Builder; Clip Extractor/Person Analyzer are not in the active UI. JSON core, recursive matching, editable timeline and gap-aware native draft adapter implemented. Full Windows UI and actual CapCut import acceptance remain pending. No EXE or ZIP built.

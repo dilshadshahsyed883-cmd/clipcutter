@@ -1,0 +1,28 @@
+name: Clipivo desktop timeline source tests
+on:
+  pull_request:
+    paths:
+      - 'Clipivo_V2/**'
+      - '.github/workflows/clipivo-timeline-source-tests.yml'
+permissions:
+  contents: read
+jobs:
+  source-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile changed Python sources
+        working-directory: Clipivo_V2/_internal
+        run: python -m py_compile app.py studio/json_timeline.py studio/json_timeline_export.py studio/timeline_window.py studio/capcut.py
+      - name: Test timeline core, export payload and version metadata
+        working-directory: Clipivo_V2/_internal
+        run: |
+          python -m unittest discover -s tests -p 'test_json_timeline*_232.py' -v
+          python -m unittest discover -s tests -p 'test_release_version_consistency.py' -v
+      - name: Check native draft JSON gap structure
+        working-directory: Clipivo_V2/_internal
+        run: |
+          node --check studio/capcut-draft.js
+          node --check studio/capcut_bridge.js
+          node tests/test_json_timeline_native_232.js

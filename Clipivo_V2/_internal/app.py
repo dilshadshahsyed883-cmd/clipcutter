@@ -30,20 +30,14 @@ os.environ.setdefault("RESOURCE_NAME", "Clipivo")
 
 # The optional Linux GPU download replaces the built-in ONNX Runtime, so it has to be on the
 # import path before anything imports onnxruntime.
-from core.downloads import activate_gpu_pack  # noqa: E402
-
-activate_gpu_pack()
+# Legacy GPU activation is intentionally not performed by the standalone timeline UI.
 
 from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtGui import QFontDatabase, QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
-from core.character_store import CharacterStore, CharacterStoreError  # noqa: E402
 from core.downloads import APP_DIR, ffmpeg_available  # noqa: E402
-from core.export import clean_stale_work  # noqa: E402
-from core.face_engine import InsightFaceEngine  # noqa: E402
-from studio.window import StudioWindow as MainWindow  # noqa: E402
-from ui.setup_dialog import ffmpeg_missing_message, missing_downloads, offer_downloads, open_vlc_page  # noqa: E402
+from studio.timeline_window import TimelineWindow as MainWindow  # noqa: E402
 from version import __app_name__, __org_name__, __version__  # noqa: E402
 
 
@@ -74,18 +68,8 @@ def restore_user_environment(app: QApplication) -> None:
 
 
 def first_launch_checks(window: MainWindow) -> None:
-    """Show what Clipivo found and fetch what is missing (the face models, ffmpeg where needed).
-    The setup window lists VLC and ffmpeg too; without it, say if either is missing."""
-    if missing_downloads():
-        offer_downloads(window, window.face_engine, window.playback_info)
-        return
     if not ffmpeg_available():
-        QMessageBox.warning(window, "ffmpeg is missing", ffmpeg_missing_message())
-    reason = window.playback_unavailable_reason()
-    if reason:
-        box = QMessageBox(QMessageBox.Information, "Install VLC for playback", reason, QMessageBox.Ok, window)
-        box.addButton("Get VLC", QMessageBox.ActionRole).clicked.connect(open_vlc_page)
-        box.exec()
+        QMessageBox.warning(window, "ffprobe / ffmpeg missing", "Install FFmpeg or restore the existing Clipivo media tools before importing JSON or scanning footage.")
 
 
 def load_fonts() -> None:
@@ -250,27 +234,13 @@ def main() -> int:
     app.setWindowIcon(QIcon.fromTheme("io.longweekendlabs.Clipivo", QIcon(str(PROJECT_DIR / "assets" / "clipivo.svg"))))
     load_fonts()
     restore_user_environment(app)
-    try:
-        clean_stale_work()
-    except OSError:
-        pass
-
-    store = None
-    store_error = ""
-    try:
-        store = CharacterStore()
-    except CharacterStoreError as exc:
-        store_error = str(exc)
-    # Preserve upstream extractor model discovery and checksum verification.
-    # Studio analysis resolves its own configured models independently.
-    face_engine = InsightFaceEngine()
-    window = MainWindow(PROJECT_DIR, store, face_engine, store_error)
+    window = MainWindow()
     window.show()
     QTimer.singleShot(0, lambda: first_launch_checks(window))
     if len(sys.argv) > 1:
         source = Path(sys.argv[1]).expanduser()
-        if source.is_file():
-            QTimer.singleShot(0, lambda: window.open_video(source))
+        if source.is_file() and source.suffix.lower() == '.json':
+            QTimer.singleShot(0, lambda: window.import_path(str(source)))
     return app.exec()
 
 

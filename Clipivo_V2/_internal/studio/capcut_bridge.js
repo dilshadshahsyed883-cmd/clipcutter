@@ -10,7 +10,7 @@ function main() {
   if (!req.drafts_root && info.draftsSettingError) throw Error(info.draftsSettingError);
   if (!drafts) throw Error('CapCut draft location not found. Set a custom drafts folder.');
   const plan = engine.makePlan(req.payload, req.media || {});
-  if (!plan.images.length) throw Error('No video/image clips in resolved timeline');
+  if (!plan.images.length && !plan.allowTimelineGaps) throw Error('No video/image clips in resolved timeline');
   const result = engine.writeProject({plan, drafts, folderName: req.payload.name});
   const issues = plan.strictTimeline ? engine.verifyStrictProject(result.folder, plan, result.files) : engine.verifyProject(result.folder, plan);
   const output = { ...result, verify_issues: issues, notes: plan.notes,

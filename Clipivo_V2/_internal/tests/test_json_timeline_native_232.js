@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const engine=require('../studio/capcut-draft.js');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipivo-gap-test-'));
+try {
+  const file=path.join(dir,'clip.mp4');fs.writeFileSync(file,'fixture only');
+  const media={[file]:{w:640,h:360,duration:10,videoDuration:10,hasAudio:false}};
+  const clip=(start,end)=>({image:file,kind:'video',start,end,trimStart:0,speed:1,zoom:'none',hasAudio:false,muted:true,transform:{scale:1,x:0,y:0},kfs:{}});
+  const payload={name:'Gap test',W:640,H:360,fps:30,images:[clip(1,2),clip(3,4)],captions:[],music:[],sfx:[],singleVisualTrack:true,strictTimeline:true,allowTimelineGaps:true,timelineDuration:5};
+  const plan=engine.makePlan(payload,media);
+  assert.equal(plan.total,5);assert.equal(plan.gaps,3);
+  const result=engine.writeProject({plan,drafts:dir,folderName:'gap-test'});
+  assert.deepEqual(engine.verifyStrictProject(result.folder,plan,result.files),[]);
+  const content=JSON.parse(fs.readFileSync(path.join(result.folder,'draft_content.json')));
+  assert.equal(content.duration,5000000);assert.equal(content.config.maintrack_adsorb,false);
+  assert.deepEqual(content.tracks[0].segments.map(s=>[s.target_timerange.start,s.target_timerange.duration]),[[1000000,1000000],[3000000,1000000]]);
+  assert.throws(()=>engine.makePlan({...payload,allowTimelineGaps:false},media));
+  assert.throws(()=>engine.makePlan({...payload,images:[clip(1,3),clip(2,4)]},media));
+  const empty=engine.makePlan({...payload,images:[]},media);
+  const emptyResult=engine.writeProject({plan:empty,drafts:dir,folderName:'empty-test'});
+  assert.deepEqual(engine.verifyStrictProject(emptyResult.folder,empty,emptyResult.files),[]);
+  assert.equal(emptyResult.duration,5);
+} finally {fs.rmSync(dir,{recursive:true,force:true});}
+console.log('Native draft gap structure checks passed (not a CapCut application acceptance test).');
