@@ -12,7 +12,7 @@ from .intake import Bridge
 from .scheduler import Control
 from .lifecycle import LifecycleError
 from . import youtube
-from .review import Approval, get_review, approve
+from .review import Approval, get_review, approve, source_preview
 from .uploads import create_uploaded, discard_uploads
 
 router=APIRouter(prefix="/api/v1/studio")
@@ -126,6 +126,11 @@ def batch(job:str,s:Store=Depends(store)):
 
 @router.get("/requests/{job}/review")
 def review(job:str,s:Store=Depends(store)): return get_review(s,job)
+
+@router.get("/requests/{job}/review/source")
+def review_source(job:str,s:Store=Depends(store)):
+    path,media=source_preview(s,job)
+    return FileResponse(path,media_type=media,headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"})
 
 @router.post("/requests/{job}/review",dependencies=[Depends(require_csrf)])
 def approve_review(job:str,value:Approval,s:Store=Depends(store)): return approve(s,job,value)

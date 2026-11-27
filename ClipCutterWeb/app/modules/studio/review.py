@@ -70,6 +70,29 @@ def get_review(store,jid):
         return {"scan_sha256":a["result_sha"],"ready_for_approval":a["phase"]=="review_ready",
                 "duration_ms":result["duration_ms"],"state":result["state"],"ranges":result["ranges"]}
 
+def source_preview(store,jid):
+    """Owner-local source from a verified, review-ready scan."""
+    from .intake import verify_format
+    with store.connect() as c:
+        job=store.row(c,jid);a=_attempt(c,jid)
+        if job["kind"]!="extractor" or job["state"]!="review" or a["phase"]!="review_ready":
+            raise HTTPException(409,"Verified review source unavailable")
+        m=json.loads(a["manifest"]);mapping=json.loads(a["mapping"])
+    if m["action"]!="scan":raise HTTPException(409,"Not a reference scan")
+    name=mapping.get("source.video","");item=m["files"]["source.video"]
+    if not NAME.fullmatch(name):raise HTTPException(409,"Unsafe preview source")
+    p=store.root/"inputs"/jid/name
+    media={".mp4":"video/mp4",".m4v":"video/mp4",".mov":"video/quicktime",".webm":"video/webm"}
+    try:
+        if p.resolve()!=p or not p.is_file() or p.stat().st_nlink!=1 or p.stat().st_size!=item["size"]:
+            raise HTTPException(409,"Verified source changed or missing")
+        if p.suffix.lower() not in media:
+            raise HTTPException(415,"Source container may not play in the browser")
+        verify_format(p,"video",p.suffix.lower())
+    except (OSError,ValueError,RuntimeError):
+        raise HTTPException(409,"Verified preview source unavailable") from None
+    return p,media[p.suffix.lower()]
+
 def approve(store,jid,approval):
     with store.admission(),store.connect() as c:
         c.execute("BEGIN IMMEDIATE");job=store.row(c,jid);a=_attempt(c,jid)

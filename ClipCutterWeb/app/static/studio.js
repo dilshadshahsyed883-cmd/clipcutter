@@ -7,7 +7,7 @@
  function setView(view){
    root.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view===view)));
    root.querySelectorAll("[data-panel]").forEach(p=>p.hidden=p.dataset.panel!==view||(p.hasAttribute("data-extra")&&!extras.has(p.id)));
-   if(view!=="results")$("output-preview").pause();
+   if(view!=="results"){$("output-preview").pause();$("review-video")?.pause();}
  }
  root.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>setView(b.dataset.view));
  $("result-request").onchange=()=>{const id=$("result-request").value;if(id)showOutputs(id);else{selected=null;++seq;if(kind==="extractor")$("output-controls").hidden=true;$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a request.";}};
@@ -197,7 +197,58 @@
    $("output-delete-selected").onclick=()=>{const ids=outputSelection();if(selected&&ids.length)manageOutput(selected,{action:"delete",ids});else $("output-status").textContent="Select clips first.";};
    $("output-zip").onclick=()=>{if(selected)downloadZip(selected);};
  }
+ let thumbsObserver=null,reviewDuration=0;
+ function updateOutputView(){
+   if(kind!=="extractor")return;
+   const list=$("output-list"),grid=$("output-view").value==="grid";
+   thumbsObserver?.disconnect();thumbsObserver=null;
+   list.classList.toggle("studio-outputs-grid",grid);
+   const thumbs=list.querySelectorAll("video[data-thumb]");
+   for(const v of thumbs){
+     v.hidden=!grid;
+     if(!grid){v.pause();v.removeAttribute("src");v.load();}
+   }
+   if(!grid)return;
+   const load=v=>{if(!v.hasAttribute("src"))v.src=v.dataset.thumb+"#t=0.1";};
+   if("IntersectionObserver" in window){
+     const observer=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){load(e.target);observer.unobserve(e.target);}});
+     thumbsObserver=observer;thumbs.forEach(v=>observer.observe(v));
+   }else Array.from(thumbs).slice(0,12).forEach(load);
+ }
+ function resetReviewPreview(){
+   const video=$("review-video");if(!video)return;
+   video.pause();video.removeAttribute("src");video.load();video.hidden=true;
+   reviewDuration=0;$("review-seek").disabled=true;$("review-seek").value=0;
+   $("review-position").textContent="0.00 s";$("review-timeline").replaceChildren();
+   $("review-preview-note").textContent="";
+ }
+ function drawReviewTimeline(){
+   const line=$("review-timeline");if(!line)return;
+   line.replaceChildren();if(!reviewDuration)return;
+   for(const [a,b] of values("review-ranges")){
+     if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<=a||b>reviewDuration)continue;
+     const seg=button(a.toFixed(2)+"–"+b.toFixed(2),()=>{
+       const v=$("review-video");if(v.readyState>=1)v.currentTime=a;
+     });
+     seg.className="studio-timeline-range";
+     seg.style.left=(100*a/reviewDuration)+"%";
+     seg.style.width=(100*(b-a)/reviewDuration)+"%";
+     seg.title=a.toFixed(2)+"–"+b.toFixed(2)+" s";seg.setAttribute("aria-label","Seek to "+seg.title);
+     line.append(seg);
+   }
+ }
+ if(kind==="extractor"){
+   $("output-view").onchange=updateOutputView;
+   const v=$("review-video"),seek=$("review-seek");
+   seek.oninput=()=>{if(v.readyState>=1)v.currentTime=Number(seek.value);};
+   v.onloadedmetadata=()=>{seek.disabled=false;};
+   v.ontimeupdate=()=>{seek.value=Math.min(reviewDuration,v.currentTime);$("review-position").textContent=v.currentTime.toFixed(2)+" s";};
+   v.onerror=()=>{if(!v.hasAttribute("src"))return;seek.disabled=true;$("review-preview-note").textContent="Browser preview unavailable; ranges remain editable.";};
+   $("review-ranges").addEventListener("input",drawReviewTimeline);
+   $("review-ranges").addEventListener("click",drawReviewTimeline);
+ }
  async function showOutputs(job){
+   resetReviewPreview();thumbsObserver?.disconnect();thumbsObserver=null;
    selected=job;const stamp=++seq;extras.delete("review-panel");setView("results");
    $("result-request").value=job;$("person-results").replaceChildren();
    const list=$("output-list"), video=$("output-preview");if(kind==="extractor")$("output-controls").hidden=true;
@@ -211,9 +262,14 @@
        row.append(put("span",file.name+" · "+(file.size/1024**2).toFixed(2)+" MiB"+(Number.isFinite(file.duration_ms)?" · "+(file.duration_ms/1000).toFixed(2)+" s":"")));
        const href="/api/v1/studio/requests/"+job+"/outputs/"+encodeURIComponent(id),a=put("a","Download");a.href=href;row.append(a);
        if(file.media_type==="video/mp4"){
-         row.append(button("Preview",()=>{video.src=href+"?preview=true";video.hidden=false;}));
+         const preview=()=>{video.src=href+"?preview=true";video.hidden=false;video.scrollIntoView({block:"nearest"});};
+         if(kind==="extractor"){
+           const thumb=document.createElement("video");thumb.className="studio-clip-thumb";thumb.dataset.thumb=href+"?preview=true";thumb.preload="metadata";thumb.muted=true;thumb.playsInline=true;thumb.hidden=true;thumb.setAttribute("aria-label","Preview "+file.name);thumb.onclick=preview;row.prepend(thumb);
+         }
+         row.append(button("Preview",preview));
          if(kind==="extractor"&&data.editable){const name=document.createElement("input");name.value=file.name;name.maxLength=128;name.setAttribute("aria-label","Rename clip");row.append(name,button("Rename",()=>manageOutput(job,{action:"rename",ids:[id],name:name.value})),button("Delete",()=>manageOutput(job,{action:"delete",ids:[id]})));}
        }list.append(row);}
+     if(kind==="extractor")updateOutputView();
      if(kind==="analyzer"&&data.outputs.some(f=>f.name==="analysis.json"))await showPeople(job,stamp);
    }catch(err){if(stamp===seq)$("output-status").textContent=err.message;}
  }
@@ -237,6 +293,7 @@
    }catch(e){if(stamp===seq)pane.textContent=e.message;}
  }
  async function showReview(job){
+   resetReviewPreview();thumbsObserver?.disconnect();thumbsObserver=null;
    const pane=$("review-panel"), rows=$("review-ranges"), note=$("review-status"), approve=$("review-approve");
    selected=null;$("result-request").value="";$("person-results").replaceChildren();$("output-list").replaceChildren();const video=$("output-preview");video.pause();video.removeAttribute("src");video.load();video.hidden=true;$("output-status").textContent="Select a completed request to inspect its outputs.";
    extras.add("review-panel");if(kind==="extractor")$("output-controls").hidden=true;setView("results");rows.replaceChildren();note.textContent="Loading scan…";approve.disabled=true;
@@ -245,7 +302,14 @@
      const data=await api("/requests/"+job+"/review");if(stamp!==seq)return;
      note.textContent="Source duration: "+(data.duration_ms/1000)+" s. Review the start/end times. "+(data.ready_for_approval?"":"Waiting for verified scan acknowledgement.");
      for(const r of data.ranges)fields(rows,["Start (s)","End (s)"],[r.start_ms/1000,r.end_ms/1000],1000);
-     $("review-add").onclick=()=>fields(rows,["Start (s)","End (s)"],[0,Math.min(2,data.duration_ms/1000)],1000);
+     if(kind==="extractor"){
+       reviewDuration=data.duration_ms/1000;$("review-seek").max=reviewDuration;
+       const v=$("review-video");v.hidden=!data.ready_for_approval;
+       if(data.ready_for_approval){v.src="/api/v1/studio/requests/"+job+"/review/source";v.preload="metadata";}
+       else $("review-preview-note").textContent="Waiting for verified scan acknowledgement.";
+       drawReviewTimeline();
+     }
+     $("review-add").onclick=()=>{fields(rows,["Start (s)","End (s)"],[0,Math.min(2,data.duration_ms/1000)],1000);drawReviewTimeline();};
      approve.disabled=!data.ready_for_approval;
      approve.onclick=async()=>{
        approve.disabled=true;
@@ -253,7 +317,7 @@
          const ranges=values("review-ranges").map(([a,b])=>({start_ms:Math.round(a*1000),end_ms:Math.round(b*1000)}));
          if(!ranges.length||ranges.some(r=>!Number.isFinite(r.start_ms)||!Number.isFinite(r.end_ms)||r.start_ms<0||r.end_ms<=r.start_ms||r.end_ms>data.duration_ms))throw Error("Enter valid source ranges");
          await api("/requests/"+job+"/review","POST",{scan_sha256:data.scan_sha256,ranges});
-         note.textContent="Approved; export queued.";await refresh();
+         resetReviewPreview();note.textContent="Approved; export queued.";await refresh();
        }catch(e){note.textContent=e.message;approve.disabled=false;}
      };
    }catch(e){note.textContent=e.message;}
@@ -283,6 +347,7 @@
        const gpuUploading=job.state==="ready"&&job.message.startsWith("GPU uploading:");
        [job.id.slice(0,8),gpuUploading?(job.progress===100?"GPU input ready":"Uploading to GPU"):job.state.replaceAll("_"," "),job.progress===null?"—":job.progress+"%",job.message].forEach(t=>tr.append(put("td",t)));
        const actions=document.createElement("td");actions.append(button("Outputs",()=>showOutputs(job.id)));
+       if(kind==="extractor")actions.append(put("span",job.settings?.mode==="manual"?"GPU export":"GPU scan + export"));
        if(job.state==="batch_expanded")actions.append(button("Batch videos",()=>showBatch(job.id)));
        if(job.state==="review")actions.append(button("Review ranges",()=>showReview(job.id)));
        if(job.state==="failed"&&(job.message.startsWith("Drive intake:")||job.message.startsWith("YouTube intake:")))actions.append(button("Retry intake",async()=>{try{await api("/requests/"+job.id+"/intake","POST");status.textContent="Input intake requested";await refresh();}catch(err){status.textContent=err.message;}}));

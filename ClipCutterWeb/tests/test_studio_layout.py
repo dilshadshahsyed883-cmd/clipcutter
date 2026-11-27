@@ -46,3 +46,14 @@ class StudioLayoutTests(unittest.TestCase):
         for id in ("identity-dialog","identity-add","identity-rename","identity-delete-selected","identity-files","identity-import","output-zip","output-identity-filter"):
             self.assertIn('id="'+id+'"',html)
         self.assertNotIn('id="identity-dialog"',env.get_template("studio.html").render(page={"key":"analyzer","title":"Person Analyzer"}))
+
+    def test_review_preview_and_output_view(self):
+        env=Environment(loader=FileSystemLoader(ROOT/"app/templates"))
+        html=env.get_template("studio.html").render(page={"key":"extractor","title":"Clip Extractor"})
+        for control in ("review-video","review-timeline","review-seek","output-view"):
+            self.assertIn('id="'+control+'"',html)
+        self.assertIn("Scan settings",html)
+        self.assertIn("Encoding settings",html)
+        other=env.get_template("studio.html").render(page={"key":"analyzer","title":"Analyzer"})
+        self.assertNotIn('id="review-video"',other)
+        self.assertNotIn('id="output-view"',other)

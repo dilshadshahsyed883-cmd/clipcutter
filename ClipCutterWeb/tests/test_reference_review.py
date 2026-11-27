@@ -7,10 +7,10 @@ from fastapi import HTTPException
 from app.modules.studio.contracts import JobRequest
 from app.modules.studio.store import Store,safe_dir
 from app.modules.studio.dispatch import Dispatcher,canonical,DispatchError
-from app.modules.studio.review import Approval,get_review,approve
+from app.modules.studio.review import Approval,get_review,approve,source_preview
 
 def sha(b):return hashlib.sha256(b).hexdigest()
-VIDEO=b"source video";REF=b"reference"
+VIDEO=b"\x00\x00\x00\x18ftypisom synthetic";REF=b"reference"
 
 class Fake:
     origin="https://example.salad.cloud";expected_sha="1"*40
@@ -70,6 +70,16 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(self.d.tick(self.jid),"running")
         self.assertEqual(self.worker.remote["action"],"export")
         self.assertNotEqual(*self.worker.attempts)
+    def test_source_preview_owner_scope_and_verified_state(self):
+        with self.assertRaises(HTTPException):source_preview(self.store,self.jid)
+        self.scan()
+        path,media=source_preview(self.store,self.jid)
+        self.assertEqual(path,self.root/"source-0001.mp4")
+        self.assertEqual(media,"video/mp4")
+        with self.assertRaises(HTTPException):source_preview(Store("other",self.store.root.parent.parent),self.jid)
+        path.write_bytes(b"changed")
+        with self.assertRaises(HTTPException):source_preview(self.store,self.jid)
+
     def test_range_and_changed_input_rejected(self):
         self.scan()
         with self.assertRaises(HTTPException):approve(self.store,self.jid,self.approval(1000,6000))
