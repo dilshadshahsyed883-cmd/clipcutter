@@ -7,7 +7,7 @@ if not defined LOCALAPPDATA (
 )
 set "CLIPIVO_HOME=%LOCALAPPDATA%\ClipivoV2"
 set "CLIPIVO_RUNTIME=%LOCALAPPDATA%\ClipivoV2\runtime\python-v2.3"
-set "CLIPIVO_REQUIREMENTS=%~dp0_internal\requirements.txt"
+set "CLIPIVO_REQUIREMENTS=%~dp0_internal\requirements-timeline.txt"
 set "CLIPIVO_ENTRY=%~dp0_internal\app.py"
 set "PIP_CACHE_DIR=%CLIPIVO_HOME%\cache\pip"
 set "TEMP=%CLIPIVO_HOME%\cache\temp"
@@ -22,7 +22,7 @@ set "PIP_USER="
 set "PIP_CONFIG_FILE=NUL"
 set "CLIPIVO_STUDIO_DATA=%CLIPIVO_HOME%"
 if not exist "%CLIPIVO_REQUIREMENTS%" (
- echo Missing _internal\requirements.txt. Extract the complete source folder.
+ echo Missing _internal\requirements-timeline.txt. Extract the complete source folder.
  goto :failed
 )
 if not exist "%CLIPIVO_ENTRY%" (
@@ -53,11 +53,11 @@ if errorlevel 1 (
  goto :failed
 )
 rem Reconcile pins once whenever requirements change. No source-local installs.
-"%CLIPIVO_RUNTIME%\Scripts\python.exe" -c "import hashlib,os,pathlib; p=pathlib.Path(os.environ['CLIPIVO_REQUIREMENTS']); stamp=pathlib.Path(os.environ['CLIPIVO_RUNTIME'])/'requirements.sha256'; assert stamp.read_text().strip()==hashlib.sha256(p.read_bytes()).hexdigest(); import PySide6,cv2,av,onnxruntime,cryptography,keyring,vlc,psutil" >nul 2>&1
+"%CLIPIVO_RUNTIME%\Scripts\python.exe" -c "import hashlib,os,pathlib; p=pathlib.Path(os.environ['CLIPIVO_REQUIREMENTS']); stamp=pathlib.Path(os.environ['CLIPIVO_RUNTIME'])/'requirements.sha256'; assert stamp.read_text().strip()==hashlib.sha256(p.read_bytes()).hexdigest(); from PySide6 import QtWidgets,QtMultimedia,QtMultimediaWidgets; import certifi" >nul 2>&1
 if errorlevel 1 (
  "%CLIPIVO_RUNTIME%\Scripts\python.exe" -m pip install --disable-pip-version-check -r "%CLIPIVO_REQUIREMENTS%"
  if errorlevel 1 goto :failed
- "%CLIPIVO_RUNTIME%\Scripts\python.exe" -c "import PySide6,cv2,av,onnxruntime,cryptography,keyring,vlc,psutil; import hashlib,os,pathlib; p=pathlib.Path(os.environ['CLIPIVO_REQUIREMENTS']); (pathlib.Path(os.environ['CLIPIVO_RUNTIME'])/'requirements.sha256').write_text(hashlib.sha256(p.read_bytes()).hexdigest())"
+ "%CLIPIVO_RUNTIME%\Scripts\python.exe" -c "from PySide6 import QtWidgets,QtMultimedia,QtMultimediaWidgets; import certifi; import hashlib,os,pathlib; p=pathlib.Path(os.environ['CLIPIVO_REQUIREMENTS']); (pathlib.Path(os.environ['CLIPIVO_RUNTIME'])/'requirements.sha256').write_text(hashlib.sha256(p.read_bytes()).hexdigest())"
  if errorlevel 1 goto :failed
 )
 "%CLIPIVO_RUNTIME%\Scripts\python.exe" "%CLIPIVO_ENTRY%" %*

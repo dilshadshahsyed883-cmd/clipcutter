@@ -43,8 +43,8 @@ class AboutDialog(QDialog):
         layout.addWidget(version)
 
         description = QLabel(
-            "A local-first Avidemux-style video cutter with reusable and per-video "
-            "character references. Face processing stays on this computer."
+            "Standalone JSON-driven timeline builder with local footage selection, "
+            "editable timelines and native CapCut drafts."
         )
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignHCenter)
@@ -69,13 +69,13 @@ class AboutDialog(QDialog):
         layout.addLayout(chip_row)
 
         notice = QLabel(
-            "No licence key, no trial, no subscription. The face models Clipivo downloads are "
-            "InsightFace's buffalo_l pack, for non-commercial research use under InsightFace's terms."
+            "No licence key, no trial, no subscription. This timeline workflow reads existing "
+            "analysis JSON; it does not run face recognition or download face models."
         )
         notice.setWordWrap(True)
         notice.setAlignment(Qt.AlignHCenter)
         notice.setStyleSheet(f"color: {PALETTE['muted']}; font-size: 10px;")
-        notice.setToolTip("Licence and face-model terms")
+        notice.setToolTip("Licence and timeline workflow")
         layout.addWidget(notice)
 
         link_style = f"color:{PALETTE['accent']}; text-decoration:none"

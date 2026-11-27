@@ -48,8 +48,6 @@ PROJECT_DIR = APP_DIR
 def restore_user_environment(app: QApplication) -> None:
     """Give programs Clipivo starts the user's own environment back. Call after the
     QApplication exists and OpenCV has been imported (it sets LD_LIBRARY_PATH on import)."""
-    import cv2  # noqa: F401 - imported now so a later first import cannot change the environment again
-
     # Keep Qt finding its plugins without the variable: pin the paths it worked out.
     app.setLibraryPaths(app.libraryPaths())
     bundle = str(Path(getattr(sys, "_MEIPASS", APP_DIR)).resolve())
@@ -69,7 +67,7 @@ def restore_user_environment(app: QApplication) -> None:
 
 def first_launch_checks(window: MainWindow) -> None:
     if not ffmpeg_available():
-        QMessageBox.warning(window, "ffprobe / ffmpeg missing", "Install FFmpeg or restore the existing Clipivo media tools before importing JSON or scanning footage.")
+        QMessageBox.warning(window, 'Media tools missing', 'Install FFmpeg including ffprobe, or restore the existing Clipivo media tools before importing JSON or scanning footage.')
 
 
 def load_fonts() -> None:
@@ -78,148 +76,27 @@ def load_fonts() -> None:
 
 
 def self_test() -> int:
-    """Check a packaged build without opening a window: the libraries load, ONNX Runtime
-    runs, and what is still to be downloaded. Prints JSON; exit code 1 on a broken build."""
-    import json
-
-    import numpy as np
-
-    from core import downloads
-    from core.face_models import FaceAnalysis, execution_providers
-
-    report: dict = {"version": __version__, "platform": sys.platform, "app_dir": str(APP_DIR)}
-    failures = []
-    app = QApplication.instance() or QApplication(["clipivo", "-platform", "offscreen"])
+    """Timeline-only diagnostics; no recognition, GPU or encoding."""
+    import json,subprocess
+    from core.downloads import tool_path
+    from PySide6.QtMultimedia import QMediaPlayer
+    from PySide6.QtMultimediaWidgets import QVideoWidget
+    from studio import json_timeline
+    report={'version':__version__,'workflow':'timeline','schema':json_timeline.FORMAT,'failures':[]}
+    app=QApplication.instance() or QApplication(['clipivo','-platform','offscreen'])
     restore_user_environment(app)
     try:
-        import av
-        import cv2
-
-        report["pyav"], report["opencv"] = av.__version__, cv2.__version__
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"media libraries: {exc}")
+        player=QMediaPlayer();video=QVideoWidget();player.setVideoOutput(video)
+        report['qt_multimedia']='ok'
+    except Exception as exc:report['failures'].append('Qt multimedia: '+str(exc))
     try:
-        import onnxruntime
-
-        report["onnxruntime"] = onnxruntime.__version__
-        report["providers"] = execution_providers()
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"onnxruntime: {exc}")
-    try:
-        from core import vlc_locate
-
-        location = vlc_locate.prepare()
-        report["vlc_search"] = str(location.library) if location.usable else location.problem
-        import vlc
-
-        report["vlc_library"] = getattr(getattr(vlc, "dll", None), "_name", "")
-        instance = vlc.Instance("--quiet")
-        report["vlc"] = vlc.libvlc_get_version().decode() if instance else "library found, but it did not start"
-    except Exception as exc:  # noqa: BLE001
-        report["vlc"] = f"not found ({type(exc).__name__})"
-    report["ffmpeg"] = downloads.tool_path("ffmpeg") if downloads.ffmpeg_available() else "not found"
-    # Run what Clipivo launches, with the environment it launches them with: a packaged
-    # build once broke every external program through its own library path.
-    import shutil
-    import subprocess
-    import tempfile
-
-    launched = {}
-    tools = []
-    if downloads.ffmpeg_available():
-        tools += [("ffmpeg", downloads.tool_path("ffmpeg")), ("ffprobe", downloads.tool_path("ffprobe"))]
-    if sys.platform.startswith("linux"):
-        tools += [(name, shutil.which(name)) for name in ("kdialog", "zenity", "xdg-open") if shutil.which(name)]
-    for name, path in tools:
-        try:
-            done = subprocess.run([path, "-version" if name in ("ffmpeg", "ffprobe") else "--version"],
-                                  capture_output=True, text=True, timeout=30, check=False)
-            launched[name] = "ok" if done.returncode == 0 else (
-                (done.stderr.strip().splitlines() or done.stdout.strip().splitlines() or [f"exit {done.returncode}"])[0]
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            launched[name] = f"{type(exc).__name__}: {exc}"
-        if launched[name] != "ok":
-            failures.append(f"{name} does not start from Clipivo: {launched[name]}")
-    report["launched"] = launched
-    # Saved people's key lives in the OS keyring: name the backend without reading anything,
-    # so no password prompt appears.
-    try:
-        import keyring
-
-        backend = keyring.get_keyring()
-        report["keyring"] = f"{type(backend).__module__}.{type(backend).__name__}"
-        if "fail" in report["keyring"].lower() or "null" in report["keyring"].lower():
-            report["keyring"] += " · no usable keyring: saved people cannot be opened"
-    except Exception as exc:  # noqa: BLE001
-        report["keyring"] = f"{type(exc).__name__}: {exc}"
-        failures.append(f"keyring: {exc}")
-    report["child_environment"] = {
-        key: value for key, value in os.environ.items()
-        if key.startswith(("LD_", "QT_", "PYTHON", "GTK", "GDK", "GIO", "GST", "SSL_", "DYLD_"))
-    }
-    if launched.get("ffmpeg") == "ok" and launched.get("ffprobe") == "ok":
-        # A real save: make a short video, read it, cut and re-encode a clip from it.
-        try:
-            from core.export import OutputShape, export_ranges
-            from core.models import ClipRange
-            from core.video_probe import probe_video
-
-            with tempfile.TemporaryDirectory(prefix="clipivo-self-test-") as folder:
-                source = Path(folder) / "source.mp4"
-                subprocess.run([downloads.tool_path("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i",
-                                "testsrc2=size=320x180:rate=25", "-t", "2", "-pix_fmt", "yuv420p", str(source)],
-                               check=True, capture_output=True, timeout=60)
-                info = probe_video(source)
-                import av
-
-                with av.open(str(source)) as container:
-                    frame = next(container.decode(video=0))
-                    report["decode"] = f"ok · {frame.width}x{frame.height}"
-                output, = export_ranges(source, [ClipRange(200, 1500)], Path(folder) / "out", "accurate", False,
-                                        shape=OutputShape(90, 0, "whole", (info.width, info.height)))
-                saved = probe_video(output)
-                report["save"] = f"ok · {saved.video_codec} {saved.width}x{saved.height} {saved.duration_ms} ms"
-        except Exception as exc:  # noqa: BLE001
-            report["save"] = f"{type(exc).__name__}: {exc}"
-            failures.append(f"saving a clip: {exc}")
-    report["ffmpeg_downloadable"] = downloads.ffmpeg_can_download()
-    folder = downloads.find_face_models()
-    report["face_models"] = str(folder) if folder else "not downloaded"
-    if folder:
-        try:
-            analysis = FaceAnalysis(folder / "det_10g.onnx", folder / "w600k_r50.onnx", 640, execution_providers())
-            analysis.get(np.zeros((360, 640, 3), dtype=np.uint8))
-            report["face_models_run"] = analysis.providers[0]
-        except Exception as exc:  # noqa: BLE001
-            failures.append(f"face models: {exc}")
-    try:
-        report["license_bundled"] = (APP_DIR / "licenses" / "LICENSE").is_file()
-        # Qt's image plugins must still load after the environment is handed back.
-        from PySide6.QtCore import QBuffer, QByteArray, QIODevice
-        from PySide6.QtGui import QImage
-
-        data = QByteArray()
-        buffer = QBuffer(data)
-        buffer.open(QIODevice.WriteOnly)
-        QImage(8, 8, QImage.Format_RGB32).save(buffer, "JPG")
-        jpeg_ok = not QImage.fromData(data, "JPG").isNull()
-        svg_ok = not QImage(str(APP_DIR / "assets" / "clipivo.svg")).isNull()
-        report["qt_image_plugins"] = {"jpeg": jpeg_ok, "svg": svg_ok}
-        if not (jpeg_ok and svg_ok):
-            failures.append(f"Qt image plugins: jpeg {jpeg_ok}, svg {svg_ok}")
-        report["icon_bundled"] = (APP_DIR / "assets" / "clipivo.svg").is_file()
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"Qt: {exc}")
-    report["failures"] = failures
-    text = json.dumps(report, indent=2)
-    # A windowed Windows build has no console; the release workflow reads this file instead.
-    target = os.environ.get("CLIPIVO_SELF_TEST_FILE")
-    if target:
-        Path(target).write_text(text, encoding="utf-8")
-    if sys.stdout is not None:
-        print(text)
-    return 1 if failures else 0
+        result=subprocess.run([tool_path('ffprobe'),'-version'],capture_output=True,text=True,timeout=20,check=True)
+        report['ffprobe']=result.stdout.splitlines()[0]
+    except Exception as exc:report['failures'].append('ffprobe: '+str(exc))
+    print(json.dumps(report,indent=2))
+    target=os.environ.get('CLIPIVO_SELF_TEST_FILE')
+    if target:Path(target).write_text(json.dumps(report,indent=2),encoding='utf-8')
+    return int(bool(report['failures']))
 
 
 def main() -> int:

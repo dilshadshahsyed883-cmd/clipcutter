@@ -161,8 +161,10 @@ function makePlan(payload, media) {
     }
     if (payload.voice) {
       const a = payload.voice, m = media[a.file];
-      if (!m || !m.hasAudio || a.start !== 0 || a.trimStart !== 0 || us(a.dur) !== cursor ||
-          us(Math.min(m.duration, m.audioDuration ?? m.duration)) < cursor)
+      const audioEnd=us(a.dur);
+      if (!m || !m.hasAudio || a.start !== 0 || a.trimStart !== 0 || audioEnd<=0 ||
+          (plan.allowTimelineGaps ? audioEnd>cursor : audioEnd!==cursor) ||
+          us(Math.min(m.duration, m.audioDuration ?? m.duration)) < audioEnd)
         throw Error('Audio does not cover the reviewed timeline');
     }
     if ((payload.music || []).length || (payload.sfx || []).length || (payload.captions || []).length || (payload.titles || []).length)
@@ -186,7 +188,10 @@ function makePlan(payload, media) {
   txt(payload.captions, plan.captions); txt(payload.titles, plan.titles);
   plan.captions.sort((a, b) => a.start - b.start); plan.titles.sort((a, b) => a.start - b.start);
   plan.total = Math.max(0, ...plan.images.map(c => c.start + c.dur), ...plan.voice.concat(plan.music, plan.sfx).map(a => a.start + a.dur), ...plan.captions.concat(plan.titles).map(t => t.end));
-  if (plan.allowTimelineGaps) plan.total = us(payload.timelineDuration)/US;
+  if (plan.allowTimelineGaps) {
+    plan.total = us(payload.timelineDuration)/US;
+    if (plan.voice.length && us(plan.voice[0].dur)<us(plan.total)) warn('Original audio ends early; remaining timeline stays silent.');
+  }
   // what CapCut cannot receive from here (CapCut has its own versions: re-apply them there)
   const n = (f) => plan.images.filter(f).length;
   const tN = n(c => c.transOut), fN = n(c => c.filter && c.filter.id), eN = n(c => (c.effects || []).some(e => e && !e.off)), aN = n(c => c.adjust && Object.values(c.adjust).some(v => v)), cN = n(c => c.crop && (c.crop.l || c.crop.t || c.crop.r || c.crop.b));

@@ -7,8 +7,10 @@ def request(plan, name, audio, audio_file, probe):
     if audio not in ('original','none'):
         raise ValueError('Timeline Builder supports original audio or no audio')
     ref=plan['reference'];total=ref['duration'];media={};images=[]
-    if stamp(ref['path'])!=ref['stamp']:
-        raise ValueError('Original reference changed or is missing')
+    if audio=='original':
+        try:current=stamp(ref['path'])
+        except (OSError,ValueError) as exc:raise ValueError('Original reference missing; relink it or turn off original audio') from exc
+        if current!=ref['stamp']:raise ValueError('Original reference changed; relink it or turn off original audio')
     def info_for(path):
         p=str(Path(path).resolve(strict=True))
         if p not in media:media[p]=probe(p)
@@ -32,9 +34,10 @@ def request(plan, name, audio, audio_file, probe):
     if audio=='original':
         p,info=info_for(ref['path'])
         if info['hasAudio']:
-            if abs(info.get('audioStart',0))>1e-6 or min(us(info['duration']),us(info['audioDuration']))<total:
-                raise ValueError('Original audio cannot cover the exact timeline; disable audio to export')
-            voice=dict(file=p,start=0,trimStart=0,dur=total/US,volume=1)
+            if abs(info.get('audioStart',0))>1e-6:
+                raise ValueError('Original audio has a nonzero stream offset; disable audio to export safely')
+            duration=min(total,us(info['duration']),us(info['audioDuration']))
+            if duration>0:voice=dict(file=p,start=0,trimStart=0,dur=duration/US,volume=1)
     payload=dict(name=name,W=ref['width'],H=ref['height'],fps=ref['fps'],images=images,
                  captions=[],voice=voice,music=[],sfx=[],singleVisualTrack=True,separateLayers=False,
                  strictTimeline=True,allowTimelineGaps=True,timelineDuration=total/US)
