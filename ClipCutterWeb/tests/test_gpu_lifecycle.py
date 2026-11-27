@@ -47,6 +47,23 @@ class Tests(unittest.TestCase):
             self.store.transition(jid,"awaiting_input","staging","intake")
             self.store.transition(jid,"staging","ready","verified")
         return jid
+    def test_startup_history_once_per_boot(self):
+        from app.modules.studio.performance import report
+        self.job()
+        self.now=__import__("time").time()
+        self.assertEqual(self.tick(),"start_pending_confirmation")
+        self.api.state="running";self.api.item.update(state="running",ready=True)
+        self.worker.metrics.update(boot_id="a"*32,warmup_seconds=7.25,source_sha="b"*40)
+        self.assertEqual(self.tick(20),"ready")
+        self.assertEqual(self.tick(),"ready")
+        self.life=Lifecycle(self.store,self.cfg,self.api,self.worker,lambda:self.now)
+        self.tick()
+        result=report(self.store,24)
+        self.assertIn("GPU startup observations: 1",result)
+        self.assertIn("Worker warmup: 7.250 s",result)
+        self.assertIn("Start request to observed ready: 20.000 s",result)
+        self.assertNotIn("a"*32,report(Store("other",self.store.root.parent.parent),24))
+
     def test_salad_hyphenated_scaling_field_allows_ready_dispatch(self):
         self.job()
         self.api.state="running"

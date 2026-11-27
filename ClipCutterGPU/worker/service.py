@@ -7,6 +7,8 @@ import os
 import re
 import signal
 import socket
+import time
+from uuid import uuid4
 from threading import Thread,BoundedSemaphore
 from urllib.parse import urlsplit,parse_qs
 from .runtime import warmup
@@ -15,10 +17,12 @@ from .extractor.runner import MAX_JSON
 
 status={"ready":False,"state":"warming_up","service":"clipcutter-gpu","source_sha":os.environ.get("CLIPCUTTER_SOURCE_SHA","unknown")}
 def initialize():
+    started=time.monotonic()
+    boot_id=uuid4().hex
     try:
         if len(os.environ.get("CLIPCUTTER_WORKER_API_TOKEN",""))<32:raise RuntimeError("Independent API token required")
         result=warmup()
-        status.update(result,state="ready",ready=True)
+        status.update(result,state="ready",ready=True,boot_id=boot_id,warmup_seconds=time.monotonic()-started)
     except Exception as exc:
         print("Worker warmup failed:",type(exc).__name__,str(exc),flush=True)
         status.update(ready=False,state="not_ready")
@@ -61,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
         if method=="GET" and path=="/api/capabilities":
             return 200,{"source_sha":status["source_sha"],"contract_version":2,"kinds":["extractor","analyzer"],"source_kinds":["video","youtube"],
                 "ready":status["ready"],"dispatch_enabled":status["ready"],"transport":"verified-chunks-v1",
-                "chunk_bytes":CHUNK,**w.metrics()}
+                "chunk_bytes":CHUNK,"boot_id":status.get("boot_id"),"warmup_seconds":status.get("warmup_seconds"),**w.metrics()}
         m=re.fullmatch(r"/api/jobs/([a-f0-9]{32})(?:/(start|cancel|purge|input|output)(?:/([A-Za-z0-9_.-]{1,128}))?)?",path)
         if not m:raise ApiError(404,"not_found")
         a,action,name=m.groups()

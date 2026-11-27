@@ -55,10 +55,28 @@ def record(store,jid,remote,parallel_limit=None):
           observed_at=excluded.observed_at,parallel_limit=excluded.parallel_limit""",
           (a,jid,remote["action"],remote["state"],json.dumps(timing),int(time.time()),parallel_limit))
 
+def startup_table(c):
+    c.execute("""CREATE TABLE IF NOT EXISTS gpu_startup_history(
+        boot_id TEXT PRIMARY KEY, observed_ready_at REAL NOT NULL, warmup_seconds REAL NOT NULL,
+        start_requested_at REAL, source_sha TEXT NOT NULL)""")
+
+def record_startup(store,caps,now,start_requested_at=None):
+    """One authenticated ready observation per worker process, not per job."""
+    boot=caps.get("boot_id");warm=caps.get("warmup_seconds");sha=caps.get("source_sha")
+    if not isinstance(boot,str) or not re.fullmatch(r"[a-f0-9]{32}",boot):return
+    if not isinstance(sha,str) or not re.fullmatch(r"[a-f0-9]{40}",sha):return
+    if type(warm) not in (int,float) or not math.isfinite(warm) or not 0<=warm<=86400:return
+    if type(start_requested_at) not in (int,float) or not 0<=now-start_requested_at<=86400:start_requested_at=None
+    with store.connect() as c:
+        startup_table(c)
+        c.execute("INSERT OR IGNORE INTO gpu_startup_history VALUES (?,?,?,?,?)",(boot,now,warm,start_requested_at,sha))
+
 def report(store,hours):
     now=time.time()
     with store.connect() as c:
         details_table(c)
+        startup_table(c)
+        starts=c.execute("SELECT * FROM gpu_startup_history WHERE observed_ready_at>=? ORDER BY observed_ready_at DESC LIMIT 20000",(now-hours*3600,)).fetchall()
         rows=c.execute("""SELECT * FROM gpu_performance WHERE observed_at>=?
                           ORDER BY observed_at DESC,attempt_id LIMIT 20000""",(int(now-hours*3600),)).fetchall()
         details={x["attempt_id"]:json.loads(x["metrics"]) for x in c.execute("SELECT d.* FROM gpu_performance_details d JOIN gpu_performance p USING(attempt_id) WHERE p.observed_at>=?",(int(now-hours*3600),))}
@@ -67,9 +85,16 @@ def report(store,hours):
            "Parallel limit is the recorded scheduler limit; peak occupied slots are observed by the worker.",
            "GPU utilization and VRAM are device-wide samples, shared during parallel jobs; sampled peaks are not absolute peaks.",
            "FPS is successful FFmpeg encoded frames / measured encoding command seconds; stream copy is not encoding.",
-           "VPS exports have separate processing and delivery timings; GPU startup timing is not collected.",
+           "VPS exports have separate processing and delivery timings.",
+           "Startup: worker warmup is monotonic; start-request to observed ready includes allocation, pull, reallocation/retry and poll delay. External starts may lack a request timestamp.",
            "Older workers without timing support cannot be reconstructed.",
            f"Attempts: {len(rows)}"]
+    lines.extend(["",f"GPU startup observations: {len(starts)}"])
+    for start in starts:
+        lines.append(f"Worker boot {start['boot_id']} | SHA {start['source_sha']} | ready observed {datetime.fromtimestamp(start['observed_ready_at'],timezone.utc).isoformat()}")
+        lines.append(f"Worker warmup: {start['warmup_seconds']:.3f} s")
+        requested=start["start_requested_at"]
+        lines.append(f"Start request to observed ready: {start['observed_ready_at']-requested:.3f} s" if requested is not None else "Start request to observed ready: unavailable")
     groups={1:[],2:[]}
     for row in rows:
         timing=json.loads(row["timing"])
