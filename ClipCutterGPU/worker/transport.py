@@ -11,6 +11,7 @@ import sys
 import time
 from threading import RLock, Thread
 from .job import Staged
+from .telemetry import gpu_sample, accumulate
 from .web_contract import Analyzer, Extractor
 from .extractor.runner import MAX_JSON, MAX_REFERENCE, MAX_VIDEO
 
@@ -145,6 +146,13 @@ class Worker:
                 p=self.folder(a)/"input"/n
                 if not p.is_file() or p.stat().st_size!=x["size"]:raise ApiError(409,"Incomplete staged input")
             self.change(rec,state="queued",error=None)
+            active=self.metrics()["active_renders"]
+            for other in self.records.values():
+                if other["state"] in ACTIVE:
+                    stats=dict(other.get("telemetry",{}))
+                    stats["peak_active_slots"]=max(active,stats.get("peak_active_slots",0))
+                    stats["worker_capacity"]=self.concurrency
+                    self.change(other,telemetry=stats)
             t=Thread(target=self.process,args=(a,),daemon=True);self.threads[a]=t;t.start()
             return self.snapshot(a)
     def cancelled(self,a):
@@ -185,7 +193,7 @@ class Worker:
     def _launch(self,a,root,action):
         proc=subprocess.Popen([sys.executable,"-m","worker.job",action,str(root)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
             env=dict(os.environ,CLIPCUTTER_USE_GPU="1"),start_new_session=True)
-        error=[];last=[0.]
+        error=[];last=[0.];next_sample=0.
         def drain():
             while True:
                 line=proc.stdout.readline(65536)
@@ -206,6 +214,14 @@ class Worker:
             except ProcessLookupError:pass
         try:
             while proc.poll() is None:
+                now=time.monotonic()
+                if now>=next_sample:
+                    sample=gpu_sample()
+                    next_sample=time.monotonic()+5
+                    if sample:
+                        with self.lock:
+                            rec=self.get(a)
+                            self.change(rec,telemetry=accumulate(rec.get("telemetry",{}),sample))
                 if self.cancelled(a) or time.monotonic()>deadline:
                     kill(signal.SIGTERM)
                     try:proc.wait(timeout=10)

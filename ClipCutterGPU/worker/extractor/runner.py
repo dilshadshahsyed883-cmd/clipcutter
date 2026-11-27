@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import time
 from threading import Event
 
 from .contracts import ScanManifest, ReviewManifest
@@ -71,7 +72,7 @@ def run(root: Path, action: str, cancel: Event):
     from .vendor.video_probe import probe_video
     from .vendor.batch import analyse_video_for_characters, BatchCharacterTarget, track_person_in_clips, validate_export
     from .vendor.models import ClipRange
-    from .vendor.export import export_ranges, OutputShape, snap_to_keyframes
+    from .vendor.export import export_ranges, OutputShape, snap_to_keyframes, encoding_summary, ENCODE_MEASUREMENTS
     root=root.resolve(strict=True)
     if not root.is_dir():
         raise ValueError("Staged job directory required")
@@ -87,6 +88,7 @@ def run(root: Path, action: str, cancel: Event):
     if cancel.is_set(): raise InterruptedError("Cancelled")
     if action=="scan":
         e=engine()
+        scan_started=time.monotonic()
         result=analyse_video_for_characters(source,e,[BatchCharacterTarget("target","Target",refs,opts.threshold)],
             duration_ms=info.duration_ms,quality=opts.scan_quality,cancelled=cancel.is_set,
             progress=lambda d,t,m:event("scan",d,t,m),
@@ -95,17 +97,21 @@ def run(root: Path, action: str, cancel: Event):
         ranges=[{"start_ms":r.start_ms,"end_ms":r.end_ms,"origin":r.origin} for r in result[0].ranges
             if 0<=r.start_ms<r.end_ms<=info.duration_ms]
         publish(root,"scan-result.json",{"source_sha256":req.source_sha256,"duration_ms":info.duration_ms,
-             "state":"review" if ranges else "no_match","ranges":ranges})
+             "state":"review" if ranges else "no_match","ranges":ranges,
+             "performance":{"scan_refine_seconds":time.monotonic()-scan_started}})
         return
     # Explicit reviewed A/B ranges; scanning is optional for manual cutting.
     ranges=[ClipRange(r.start_ms,r.end_ms) for r in sorted(req.ranges,key=lambda r:r.start_ms)]
     if any(r.end_ms>info.duration_ms for r in ranges):
         raise ValueError("Reviewed clip exceeds source duration")
+    performance={}
     if req.framing_requested:
         e=engine()
+        tracking_started=time.monotonic()
         matrix=e.reference_matrix(refs)
         track_person_in_clips(source,e,"target",matrix,opts.threshold,ranges,cancelled=cancel.is_set,
             progress=lambda d,t:event("tracking",d,t,"Tracking target"))
+        performance["tracking_seconds"]=time.monotonic()-tracking_started
     if cancel.is_set(): raise InterruptedError("Cancelled")
     output=root/"outputs"
     scratch=root/"scratch"
@@ -117,10 +123,12 @@ def run(root: Path, action: str, cancel: Event):
     if opts.mode=="copy" and not shape.needs_reencode():
         ranges=snap_to_keyframes(source,ranges)
     limits=None if opts.minimum_ms is None else (opts.minimum_ms/1000,opts.maximum_ms/1000)
+    ENCODE_MEASUREMENTS.clear();export_started=time.monotonic()
     paths=export_ranges(source,ranges,output,opts.mode,opts.stitched,include_audio=opts.include_audio,
         progress=lambda d,t,m:event("export",d,t,m),cancel_event=cancel,source_fps=info.fps,
         source_video_bitrate_kbps=info.video_bitrate_kbps,shape=shape,clip_limits=limits,
         video_encoder=os.environ.get("CLIPCUTTER_VIDEO_ENCODER","auto"),output_name="clip")
+    performance.update(encoding_summary(),export_wall_seconds=time.monotonic()-export_started)
     expected = []
     if opts.framing == 'whole' and opts.mode == 'accurate':
         if limits:
@@ -145,7 +153,7 @@ def run(root: Path, action: str, cancel: Event):
         artifacts.append({"name":path.name,"size":path.stat().st_size,"duration_ms":actual,"sha256":digest.hexdigest(),"media_type":"video/mp4"})
     if not artifacts: raise RuntimeError("No verified outputs")
     if cancel.is_set(): raise InterruptedError("Cancelled")
-    publish(root,"export-result.json",{"state":"completed","source_sha256":req.source_sha256,"artifacts":artifacts})
+    publish(root,"export-result.json",{"state":"completed","source_sha256":req.source_sha256,"artifacts":artifacts,"performance":performance})
 
 def main():
     parser=argparse.ArgumentParser()
