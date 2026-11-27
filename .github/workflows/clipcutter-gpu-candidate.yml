@@ -1,22 +1,7 @@
 name: ClipCutter GPU candidate
 
-# Owner-approved automatic private educational build; main events only.
+# Owner-approved manual private educational build; main only.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'ClipCutterGPU/Dockerfile'
-      - 'ClipCutterGPU/.dockerignore'
-      - 'ClipCutterGPU/requirements.txt'
-      - 'ClipCutterGPU/worker/**'
-      - 'ClipCutterGPU/tests/**'
-      - 'ClipCutterGPU/build-candidate.sh'
-      - 'ClipCutterGPU/check-main-gpu-tree.sh'
-      - 'ClipCutterGPU/prepare-models.py'
-      - 'ClipCutterGPU/verify-private-package.py'
-      - 'ClipCutterGPU/prepare-seed-models.sh'
-      - '.github/workflows/clipcutter-gpu-candidate.yml'
-      - '.github/workflows/clipcutter-gpu-source-tests.yml'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -42,13 +27,13 @@ concurrency:
 
 jobs:
   source-tests:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (inputs.approved_sha == github.sha && inputs.private_educational_approved))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.approved_sha == github.sha && inputs.private_educational_approved
     uses: ./.github/workflows/clipcutter-gpu-source-tests.yml
     permissions:
       contents: read
   candidate:
     needs: source-tests
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (inputs.approved_sha == github.sha && inputs.private_educational_approved))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.approved_sha == github.sha && inputs.private_educational_approved
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
