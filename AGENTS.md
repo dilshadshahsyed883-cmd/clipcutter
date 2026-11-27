@@ -36,7 +36,7 @@ The owner retains the EXE build prohibition and removes the earlier general buil
 
 ## Active development version
 
-The approved automation/usability work is named 2.3.1 (not V3). `old_releases/V2.3` is immutable. See `docs/PLAN_2_3_1.md`. Preserve original extractor behavior and explicit review; no EXE builds.
+The active desktop development version is 2.3.2 (JSON-driven timeline building). `old_releases/V2.3` and `old_releases/V2.3.1` are immutable. See `docs/PLAN_2_3_2.md`. Maintain one application version source (`Clipivo_V2/_internal/version.py`); use it for window, About and diagnostics; the frozen Person Analyzer retains its own component metadata. Keep app release numbers distinct from persisted JSON schema versions, the existing Windows ZIP filename, AppData runtime paths and independent Web/GPU versions. Update active docs and archive each verified source release before starting its successor. V2.3.2 changes are restricted to JSON-driven Timeline Builder/Replacement Studio and existing CapCut export, plus version/release documentation and tests. Clip Extractor and Person Analyzer implementation and UI remain frozen at the baseline; their existing JSON is read-only input. No Concat integration, API, Rust compilation, GPU integration or EXE builds. Preserve existing functionality and explicit review.
 
 ## Mandatory delivery clarification — 26 November 2026
 

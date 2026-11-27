@@ -1,6 +1,6 @@
 # Clipcutter
 
-Independent Windows desktop video intelligence application based on Clipivo V2.2 and the MIT-licensed upstream Clipivo v0.7.7 source. The current V2.3 implementation is a **work in progress**, saved here at the owner's request. Fixes and further validation are deferred.
+Independent Windows desktop video intelligence application based on Clipivo V2.2 and the MIT-licensed upstream Clipivo v0.7.7 source. The active desktop version is **V2.3.2 (unreleased)**, focused on JSON-driven timeline building; implementation and validation are pending. V2.3 and V2.3.1 source snapshots are preserved in `old_releases/`. See `docs/PLAN_2_3_2.md`.
 
 ## Current development restriction
 

@@ -1,4 +1,6 @@
-# Clipivo V2.3.1 / Clipcutter — development checkpoint
+# Clipivo V2.3.2 / Clipcutter — unreleased development checkpoint
+
+V2.3.2 focuses on Person Analyzer JSON-driven timeline building. Implementation and acceptance are pending; see PLAN_2_3_2.md. The existing 2.3.1 workflow below is historical baseline behavior.
 
 One Qt desktop application with Clip Extractor, Person Analyzer, Replacement Studio, Batch, People Library and Settings. It reuses the original Clipivo layout shown in the owner's reference screenshot.
 

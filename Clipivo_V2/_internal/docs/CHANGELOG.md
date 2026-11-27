@@ -1,3 +1,8 @@
+# 2.3.2 — unreleased development
+
+- Align active version metadata and documentation; archive 2.3.1 source unchanged.
+- JSON-driven timeline implementation and acceptance pending.
+
 # 2.3.1 automation source checkpoint
 
 - Central compatible analysis lookup, timeline zoom, open output, Analyzer-to-Replacement handoff.
