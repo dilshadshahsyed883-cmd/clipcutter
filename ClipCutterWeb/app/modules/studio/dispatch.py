@@ -27,7 +27,7 @@ MAX_JSON=8*1024*1024
 SHA=re.compile(r"[a-f0-9]{64}")
 ID=re.compile(r"[a-f0-9]{32}")
 NAME=re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
-MEDIA={"video/mp4","application/json","text/csv"}
+MEDIA={"video/mp4","application/json","text/csv","image/jpeg"}
 class DispatchError(RuntimeError):pass
 class RemoteError(DispatchError):
     def __init__(self,code):
@@ -380,6 +380,7 @@ class Dispatcher:
             if (not isinstance(n,str) or not NAME.fullmatch(n) or n in names or type(size) is not int or
                 not 0<size<=20*1024**3 or not isinstance(sha,str) or not SHA.fullmatch(sha) or media not in MEDIA):
                 raise DispatchError("Invalid artifact descriptor")
+            if media=="image/jpeg" and (m["action"]!="analyze" or not re.fullmatch(r"person_\d{3}\.jpg",n) or size>512*1024):raise DispatchError("Invalid analyzer thumbnail descriptor")
             names.add(n)
         if local=="ready":self.store.transition(jid,"ready","processing","GPU completed",100);local="processing"
         if local=="processing":self.store.transition(jid,"processing","delivering","Receiving verified GPU outputs",0);local="delivering"
@@ -421,6 +422,7 @@ class Dispatcher:
                 return "delivering"
             if sha_file(part)!=item["sha256"]:raise DispatchError("Complete output digest mismatch; retain partial")
             if item["media_type"]=="video/mp4":verify_format(part,"video",".mp4")
+            elif item["media_type"]=="image/jpeg":verify_format(part,"image",".jpg")
             elif item["media_type"]=="application/json":
                 if item["size"]>MAX_JSON:raise DispatchError("JSON output too large")
                 json.loads(part.read_bytes())

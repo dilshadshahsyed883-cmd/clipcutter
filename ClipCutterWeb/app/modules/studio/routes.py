@@ -149,8 +149,9 @@ def zip_outputs(job:str,data:lib.Selection,s:Store=Depends(store)):
 @router.get("/requests/{job}/outputs/{name}")
 def download(job:str,name:str,preview:bool=False,s:Store=Depends(store)):
     path,row,display=names.download(s,job,name)
-    # Only allow inline playback for verified MP4; all other types are attachment.
-    inline=preview and row["media_type"]=="video/mp4"
-    return FileResponse(path,media_type="video/mp4" if row["media_type"]=="video/mp4" else "application/octet-stream",
+    # Only verified MP4 and JPEG can be previewed inline.
+    media=row["media_type"]
+    inline=preview and media in ("video/mp4","image/jpeg")
+    return FileResponse(path,media_type=media if media in ("video/mp4","image/jpeg") else "application/octet-stream",
         filename=display,content_disposition_type="inline" if inline else "attachment",
         headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"})

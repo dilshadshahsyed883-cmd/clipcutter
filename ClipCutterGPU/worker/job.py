@@ -79,29 +79,43 @@ def run(root,action,cancel):
         info=probe_video(source,include_keyframes=False)
         if not 0<info.duration_ms<=7200000: raise ValueError("Analyzer candidate supports source duration up to 2 hours")
         filters={"background":settings.ignore_background_faces,"static":settings.ignore_static_faces,
-                 "regions":[[r.x,r.y,r.x+r.w,r.y+r.h] for r in settings.ignore_regions]}
+                 "regions":[[r.x,r.y,r.x+r.w,r.y+r.h] for r in settings.ignore_regions],
+                 "dominant_face_ratio":settings.dominant_face_ratio}
         model_dir=require_models(cancel)
         engine=Engine(model_dir,os.environ.get("CLIPCUTTER_USE_GPU","1")=="1",640)
         last=[0.]
         def progress(t,total,device,groups,warning,frames,observed):
             if time.monotonic()-last[0]>=1:
                 last[0]=time.monotonic();event("analyze",t*1000,total*1000,f"{device}; {groups} candidate groups")
+        output=root/"outputs";output.mkdir(mode=0o700,exist_ok=False)
+        thumbnails=[]
         with tempfile.TemporaryDirectory(prefix="analysis-",dir=root) as tmp:
             data=analyze(source,Path(tmp)/"project",model_dir,engine.gpu,settings.sample_interval_ms/1000,
-                settings.similarity_threshold,640,progress,cancel.is_set,filters=filters,engine=engine,persist=False,store_crops=False)
+                settings.similarity_threshold,640,progress,cancel.is_set,filters=filters,engine=engine,persist=False,store_crops=False,representatives=True)
             # Do not export raw embeddings, images, face coordinates or host paths.
             people=[{k:g[k] for k in ("id","name","identity_status","segments","raw_segments","filtered","filter_reasons")} for g in data["people"]]
             summary={k:data[k] for k in ("version","duration","sample_interval","threshold","decoded_frames","analyzed_frames","device","elapsed_seconds")}
-            summary.update(people=people,source_sha256=job.source_sha256)
+            summary.update(people=people,source_sha256=job.source_sha256,
+                dominant_face_ratio=settings.dominant_face_ratio,excluded_intervals=data["excluded_intervals"],
+                timeline_precision="sample-cell estimate")
+            for index,(person,g) in enumerate(zip(people,data["people"]),1):
+                if g["filtered"]:continue
+                if cancel.is_set():raise InterruptedError("Cancelled")
+                thumbnail=g.get("representative")
+                if not thumbnail:raise RuntimeError("Eligible person has no representative thumbnail")
+                src=Path(tmp)/"project"/thumbnail
+                payload=src.read_bytes()
+                if not 0<len(payload)<=512*1024 or not payload.startswith(b"\xff\xd8\xff"):raise RuntimeError("Invalid thumbnail")
+                name=f"person_{index:03d}.jpg";(output/name).write_bytes(payload)
+                person["thumbnail"]=name;thumbnails.append((name,"image/jpeg"))
         if cancel.is_set():raise InterruptedError("Cancelled")
-        output=root/"outputs";output.mkdir(mode=0o700,exist_ok=False)
         publish(output,"analysis.json",summary)
         with (output/"timeline.csv").open("x",encoding="utf-8",newline="") as f:
             w=csv.writer(f);w.writerow(["person_id","person","start_seconds","end_seconds"])
             for g in people:
                 for a,b in g["segments"]:w.writerow([g["id"],g["name"],a,b])
         artifacts=[]
-        for name,media in (("analysis.json","application/json"),("timeline.csv","text/csv")):
+        for name,media in [("analysis.json","application/json"),("timeline.csv","text/csv"),*thumbnails]:
             p=output/name;artifacts.append({"name":name,"size":p.stat().st_size,"sha256":sha(p,cancel),"media_type":media})
         if cancel.is_set():raise InterruptedError("Cancelled")
         publish(root,"analysis-result.json",{"state":"completed","job_id":job.job_id,"source_sha256":job.source_sha256,"artifacts":artifacts})

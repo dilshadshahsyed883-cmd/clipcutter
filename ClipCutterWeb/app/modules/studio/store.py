@@ -267,7 +267,7 @@ class Store:
             name=item["name"]; size=item["size"]; digest=item["sha256"]; media=item["media_type"]
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",name) or name in names:
                 raise ValueError("Invalid output filename")
-            if media not in {"video/mp4","application/json","application/zip","text/csv"} or type(size) is not int or size<=0 or not re.fullmatch(r"[a-f0-9]{64}",digest):
+            if media not in {"video/mp4","application/json","application/zip","text/csv","image/jpeg"} or type(size) is not int or size<=0 or not re.fullmatch(r"[a-f0-9]{64}",digest):
                 raise ValueError("Invalid output metadata")
             p=self.root/"outputs"/jid/name
             if p.resolve()!=p or not p.is_file() or p.stat().st_nlink!=1 or p.stat().st_size!=size:
