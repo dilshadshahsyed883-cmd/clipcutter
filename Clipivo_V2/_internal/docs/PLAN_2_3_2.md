@@ -23,7 +23,7 @@ Desktop `v22/analyzer.py` saves `analysis.json` with `version: 2`, `source`, `du
 1. Read-only existing analysis.json import; no re-analysis.
 2. Exact accepted timestamps, person sequence, names, explicit gaps, duration preserved.
 3. Scan one main folder recursively including root videos; exact case-insensitive person-folder matches only; unassigned root footage available for manual selection; missing matches become gaps.
-4. Adjustable 2.5–4s defaults; original person boundaries take priority. Infeasible short pieces remain manual gaps.
+4. Adjustable 2.5–4s defaults; original person boundaries take priority. Short boundary pieces may use matching footage when at least one output frame; sub-frame pieces remain manual gaps. Automatic gap fill also observes maximum clip duration.
 5. Optional same-person gap filling, default maximum 1s; never fill different-person or missing-footage gaps automatically.
 6. Optional speed adjustment, default 0.8x–1.2x; trim long footage; otherwise alternate or gap.
 7. Random selection and trims, avoid reuse until alternatives exhausted, optional reuse, regenerate with new seed.
@@ -32,3 +32,7 @@ Desktop `v22/analyzer.py` saves `analysis.json` with `version: 2`, `source`, `du
 10. CapCut draft with empty gap positions, optional original audio and full duration; no video encoding.
 
 Status: standalone desktop Timeline Builder, JSON core, editable timeline, persistence and gap-aware CapCut adapter implemented in source. Legacy Extractor/Analyzer source retained but not launched or exposed. Existing tests added; full Windows and native CapCut acceptance still pending. No build or release certification.
+
+## Audit fixes
+
+Reference relocation requires explicit same-source confirmation and metadata/known-size validation; original JSON remains read-only. Short boundary pieces are explicitly labeled; allocate unique eligible footage longest-first before optional reuse, and use speed-up for near-length footage within configured limits. Scan metadata is reused only while file stamps match; preview paint avoids filesystem probes. Recover autosave and reference relink are exposed. Short original audio exports at actual duration, with the remaining timeline silent. Nonzero audio offset still fails safely. The Windows source launcher uses dedicated Qt Multimedia runtime requirements without removing legacy packages or changing archived requirements. Windows/CapCut application acceptance remains pending.

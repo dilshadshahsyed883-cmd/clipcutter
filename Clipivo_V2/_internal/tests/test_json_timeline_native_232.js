@@ -19,6 +19,13 @@ try {
   assert.deepEqual(content.tracks[0].segments.map(s=>[s.target_timerange.start,s.target_timerange.duration]),[[1000000,1000000],[3000000,1000000]]);
   assert.throws(()=>engine.makePlan({...payload,allowTimelineGaps:false},media));
   assert.throws(()=>engine.makePlan({...payload,images:[clip(1,3),clip(2,4)]},media));
+  const audioFile=path.join(dir,'audio.mp4');fs.writeFileSync(audioFile,'audio fixture');
+  const audioMedia={...media,[audioFile]:{w:640,h:360,duration:5,audioDuration:4.8,hasAudio:true}};
+  const short=engine.makePlan({...payload,voice:{file:audioFile,start:0,trimStart:0,dur:4.8,volume:1}},audioMedia);
+  const audioResult=engine.writeProject({plan:short,drafts:dir,folderName:'short-audio'});
+  assert.deepEqual(engine.verifyStrictProject(audioResult.folder,short,audioResult.files),[]);
+  assert.equal(audioResult.duration,5);assert.equal(short.voice[0].dur,4.8);
+  assert(short.notes.some(x=>x.includes('ends early')));
   const empty=engine.makePlan({...payload,images:[]},media);
   const emptyResult=engine.writeProject({plan:empty,drafts:dir,folderName:'empty-test'});
   assert.deepEqual(engine.verifyStrictProject(emptyResult.folder,empty,emptyResult.files),[]);

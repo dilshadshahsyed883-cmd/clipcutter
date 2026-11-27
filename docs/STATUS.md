@@ -68,3 +68,7 @@ Version metadata and scope are aligned. JSON-driven timeline implementation and 
 ## 2.3.2 standalone timeline source implementation
 
 Ten owner-approved rules recorded. Normal desktop launch now opens only the Timeline Builder; Clip Extractor/Person Analyzer are not in the active UI. JSON core, recursive matching, editable timeline and gap-aware native draft adapter implemented. Full Windows UI and actual CapCut import acceptance remain pending. No EXE or ZIP built.
+
+## 2.3.2 timeline audit fixes
+
+Reference relink, short boundary selection, gap maximum, speed and allocation, autosave recovery, short audio, dedicated Qt Multimedia dependencies and scan/preview optimization implemented. Source regression tests added; actual Windows and CapCut testing remains pending.
