@@ -15,6 +15,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install FFmpeg for VPS export smoke test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          /usr/bin/ffmpeg -version
+          /usr/bin/ffprobe -version
       - name: Verify web source
         run: bash ClipCutterWeb/deploy/test-source.sh
       - name: Verify browser script syntax
