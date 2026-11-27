@@ -70,12 +70,12 @@
     catch(error){$("gpu-save-status").textContent=error.message;}
     finally{fields.disabled=false;saving=false;}
   });
-  async function refreshStatus(){
+  async function refreshStatus(live=false){
     if(refreshing||saving||!configured||document.hidden)return;refreshing=true;$("gpu-refresh").disabled=true;
     if(!$("gpu-instances").children.length)$("gpu-status").textContent="Checking SaladCloud…";
     try{
-      const result=await api("/status");
-      $("gpu-status").textContent="Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Blocked: "+(result.group_blocker||"group settings not verified"));
+      const result=await api(live?"/status":"/status/cached");
+      $("gpu-status").textContent=(result.observed_at?"Last checked: "+new Date(result.observed_at*1000).toLocaleString()+" | ":"")+"Group: "+result.status+" | replicas: "+(result.replicas??"unknown")+" | autostart: "+(result.autostart_policy??"unknown")+" | "+(result.dedicated_group_compatible?"Dedicated group settings valid":"Blocked: "+(result.group_blocker||"group settings not verified"));
       $("gpu-instances").replaceChildren();
       for(const item of result.instances){const tr=document.createElement("tr");
         for(const val of [item.id,item.state,item.pulling_progress===null?null:item.pulling_progress+"%",item.ready,item.update_time]){const td=document.createElement("td");td.textContent=String(val??"Unknown");tr.append(td);}
@@ -84,9 +84,9 @@
     }catch(error){$("gpu-status").textContent="Status unavailable: "+error.message;$("gpu-instances").replaceChildren();}
     finally{refreshing=false;$("gpu-refresh").disabled=!configured;}
   }
-  $("gpu-refresh").addEventListener("click",refreshStatus);
+  $("gpu-refresh").addEventListener("click",()=>refreshStatus(true));
   api("/config").then(cfg=>{apply(cfg);return refreshStatus();}).catch(error=>{$("gpu-capability").textContent=error.message;});
   const timer=setInterval(async()=>{if(!document.hidden&&!saving){try{controls(await api("/config"));}catch(e){for(const a of ["start","stop","retry","pause","resume"])$("gpu-"+a).disabled=true;}}},10000);
-  const statusTimer=setInterval(refreshStatus,10000);
+  const statusTimer=setInterval(()=>refreshStatus(false),10000);
   window.addEventListener("pagehide",()=>{clearInterval(timer);clearInterval(statusTimer);},{once:true});
 })();
