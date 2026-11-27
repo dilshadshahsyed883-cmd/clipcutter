@@ -76,6 +76,7 @@ class TimelineWindow(QMainWindow):
         self.player=QMediaPlayer(self);self.audio_out=QAudioOutput(self);self.audio_out.setMuted(True);self.player.setAudioOutput(self.audio_out);self.player.setVideoOutput(self.video)
         self.preview_end=None;self.preview_start=0;self.player.positionChanged.connect(self.preview_position)
         self.player.mediaStatusChanged.connect(self.preview_loaded)
+        self.player.errorOccurred.connect(lambda _error,message:self.status.setText('Preview unavailable: '+message))
         controls=QHBoxLayout();layout.addLayout(controls)
         self.button(controls,'Play / pause preview',self.play)
         self.zoom=QSlider(Qt.Horizontal);self.zoom.setRange(1,12);self.zoom.setValue(1);self.zoom.valueChanged.connect(self.set_zoom);controls.addWidget(QLabel('Timeline zoom'));controls.addWidget(self.zoom)
@@ -161,7 +162,7 @@ class TimelineWindow(QMainWindow):
     def new_autosave(self):
         self.autosave_path=root()/'Timelines'/('autosave-'+uuid.uuid4().hex+'.json');self.saved_path=None
     def done(self,result):
-        if self.task.stop.is_set():self.status.setText('Cancelled; existing timeline preserved.');return
+        if self.task.stop.is_set() and self.operation!='CapCut':self.status.setText('Cancelled; existing timeline preserved.');return
         if self.operation=='Import JSON':
             self.imported=result;self.plan=None;self.new_autosave();self.refresh()
             self.heading.setText(f"{Path(result['analysis_path']).name} • {len(result['people'])} people • {result['reference']['duration']/t.US:.3f}s")
@@ -194,7 +195,7 @@ class TimelineWindow(QMainWindow):
                 elif j==0:item.setForeground(self.strip.color(row,i))
                 self.table.setItem(i,j,item)
         self.table.setUpdatesEnabled(True);self.table.blockSignals(False);self.strip.set_plan(self.plan,missing_rows)
-        if index is not None and 0<=index<len(rows):self.select_row(index)
+        if index is not None and 0<=index<len(rows):self.select_row(index);self.selection()
         self.set_zoom(self.zoom.value())
     def set_zoom(self,value):self.strip.setMinimumWidth(700*value);self.strip.update()
     def select_row(self,i):self.table.selectRow(i);self.table.scrollToItem(self.table.item(i,0))
@@ -203,7 +204,7 @@ class TimelineWindow(QMainWindow):
         return (i,self.plan['rows'][i]) if self.plan and 0<=i<len(self.plan['rows']) else (None,None)
     def selection(self):
         i,row=self.row();self.strip.active=-1 if i is None else i;self.strip.update()
-        self.player.stop();self.player.setSource(QUrl());self.preview_end=None
+        self.preview_end=None;self.player.stop();self.player.setSource(QUrl())
         if not row or not row.get('selected') or t.missing(row):return
         c=row['selected'];self.preview_start=round(c['trim']/1000);self.preview_end=self.preview_start+round((row['end']-row['start'])*c['speed']/1000)
         self.player.setSource(QUrl.fromLocalFile(c['path']));self.player.setPlaybackRate(c['speed'])

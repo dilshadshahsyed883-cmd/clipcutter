@@ -59,6 +59,8 @@ def load_analysis(path, probe, reference_path=None):
         if expected and source!=expected:
             raise ReferenceRelinkRequired('Original reference changed or moved; explicitly confirm the same source video')
     reference=reference_info(reference_path or data['source'],probe,total,expected if reference_path else None)
+    if not reference_path and expected and reference['stamp']!=expected:
+        raise ReferenceRelinkRequired('Original reference changed during import')
     people, events = {}, {0: [], total: []}
     for g in data['people']:
         pid, name = g['id'], g['name']
@@ -222,7 +224,7 @@ def relink_reference(plan_or_imported, path, probe):
     return validate(new) if new.get('format')==FORMAT else new
 
 def validate(plan):
-    if plan.get('format') != FORMAT:
+    if not isinstance(plan,dict) or plan.get('format') != FORMAT:
         raise ValueError('Unsupported timeline format')
     total=plan['reference']['duration']
     if type(total) is not int or not 0<total<=86400*US: raise ValueError('Invalid duration')
@@ -243,6 +245,7 @@ def validate(plan):
         if i>=len(intervals) or not intervals[i]['start']<=a<z<=intervals[i]['end'] or row['people']!=intervals[i]['people']:
             raise ValueError('Analyzer boundary or person membership changed')
         if any(p not in people for p in row['people']): raise ValueError('Unknown person')
+        if row.get('assigned_person') is not None and row['assigned_person'] not in people:raise ValueError('Unknown assigned person')
         c=row.get('selected')
         if c:
             speed=c['speed'];trim=c['trim'];length=c['duration']
