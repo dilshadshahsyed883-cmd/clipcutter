@@ -1,4 +1,5 @@
 from pathlib import Path
+from version import __version__
 import sys,os
 from PySide6.QtCore import Qt,QTimer
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QPushButton,QCheckBox,QDoubleSpinBox,QSpinBox,QLineEdit,QFileDialog,QMessageBox,QComboBox
@@ -80,7 +81,7 @@ class StudioWindow(MainWindow):
         for key,fn in [('video_page',lambda:self._select_page(0)),('filters_page',self._open_filters_dialog),('batch_page',lambda:self._select_page(3)),('people_page',lambda:self._select_page(4)),('settings',lambda:self._select_page(5))]:
             self.actions[key].triggered.disconnect();self.actions[key].triggered.connect(fn)
         self.setStyleSheet(self.styleSheet()+'''QTreeWidget,QTableWidget,QListWidget {background:#1e222a;alternate-background-color:#252c35;color:#f3f5f8;border:1px solid #333b48;} QHeaderView::section {background:#272c35;color:#ccd3db;padding:5px;border:1px solid #333b48;} QTreeWidget::item:selected,QTableWidget::item:selected,QListWidget::item:selected {background:#4e3c35;color:#ffffff;} QScrollArea {border:1px solid #333b48;background:#14161b;}''')
-        self.setWindowTitle('Clipivo V2.3.1 • Unified Video Intelligence Studio');self._set_video_controls_enabled(False)
+        self.setWindowTitle(f'Clipivo V{__version__} • Unified Video Intelligence Studio');self._set_video_controls_enabled(False)
         self.transfer_timer=QTimer(self);self.transfer_timer.timeout.connect(self.transfer_ranges);self.transfer_timer.start(200)
     def _select_page(self,index):
         if not getattr(self,'studio_ready',False):return super()._select_page(index)
