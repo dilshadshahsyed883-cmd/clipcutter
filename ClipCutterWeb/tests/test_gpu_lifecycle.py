@@ -47,6 +47,36 @@ class Tests(unittest.TestCase):
             self.store.transition(jid,"awaiting_input","staging","intake")
             self.store.transition(jid,"staging","ready","verified")
         return jid
+    def test_confirmed_stopped_sleeps_until_verified_auto_work(self):
+        with patch.object(self.api,"group",wraps=self.api.group) as group:
+            self.assertEqual(self.tick(),"idle_stopped")
+            self.assertEqual(self.tick(20),"idle_stopped")
+            self.assertEqual(group.call_count,1)
+            jid=self.job(ready=False)
+            self.assertEqual(self.tick(20),"waiting_for_drive_or_reconciliation")
+            self.assertEqual(group.call_count,1)
+            self.store.transition(jid,"awaiting_input","staging","intake")
+            self.store.transition(jid,"staging","ready","verified")
+            self.assertEqual(self.tick(),"start_pending_confirmation")
+            self.assertEqual(group.call_count,2)
+            self.assertEqual(self.api.posts,[("start",None)])
+            self.assertEqual(self.tick(),"start_pending_confirmation")
+            self.assertEqual(group.call_count,3)
+
+    def test_manual_stopped_sleeps_until_manual_start_or_retry(self):
+        self.cfg.auto_start=False
+        with patch.object(self.api,"group",wraps=self.api.group) as group:
+            self.assertEqual(self.tick(),"manual_mode")
+            self.assertEqual(self.tick(20),"manual_mode")
+            self.assertEqual(group.call_count,1)
+            self.assertEqual(self.tick(force=True),"manual_mode")
+            self.assertEqual(group.call_count,2)
+            self.job()
+            self.assertEqual(self.tick(),"manual_mode")
+            self.assertEqual(group.call_count,2)
+            self.assertEqual(self.tick(manual="start"),"start_pending_confirmation")
+            self.assertEqual(group.call_count,3)
+
     def test_startup_history_once_per_boot(self):
         from app.modules.studio.performance import report
         self.job()
