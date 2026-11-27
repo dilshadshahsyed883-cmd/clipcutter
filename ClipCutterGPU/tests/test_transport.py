@@ -113,6 +113,8 @@ class TransportTests(unittest.TestCase):
             self.assertTrue(entered.wait(2))
             metrics=self.w.metrics()
             self.assertEqual((metrics["active_renders"],metrics["staging"],metrics["concurrency"]),(2,1,2))
+            for a in ids[:2]:self.assertEqual(self.w.snapshot(a)["telemetry"]["peak_active_slots"],2)
+            self.assertNotIn("telemetry",self.w.snapshot(ids[2]))
             with self.assertRaises(ApiError) as cm:self.w.start(ids[2])
             self.assertEqual(cm.exception.code,429)
             self.assertEqual(self.w.cancel(ids[2])["state"],"cancelled")
@@ -139,3 +141,18 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(self.wait_terminal()["state"],"cancelled")
 
 if __name__=="__main__":unittest.main()
+
+class TelemetryTests(unittest.TestCase):
+    def test_samples_and_missing_device(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from worker.telemetry import gpu_sample,accumulate
+        with patch("worker.telemetry.subprocess.run",return_value=SimpleNamespace(stdout="RTX Test, 40, 500, 8192\n")):
+            sample=gpu_sample()
+        self.assertEqual(sample["vram_used_mib"],500)
+        stats=accumulate({},sample)
+        stats=accumulate(stats,{**sample,"utilization":80,"vram_used_mib":900})
+        self.assertEqual(stats["gpu_utilization_mean_pct"],60)
+        self.assertEqual(stats["gpu_vram_peak_mib"],900)
+        with patch("worker.telemetry.subprocess.run",side_effect=FileNotFoundError):
+            self.assertIsNone(gpu_sample())

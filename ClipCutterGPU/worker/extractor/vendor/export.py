@@ -23,6 +23,16 @@ from .video_probe import ProbeError, probe_video
 from .downloads import tool_path
 
 
+# One isolated worker subprocess per attempt; only successful encoding commands count.
+ENCODE_MEASUREMENTS=[]
+
+def encoding_summary():
+    result={}
+    for kind,frames,seconds in ENCODE_MEASUREMENTS:
+        result[kind+"_frames"]=result.get(kind+"_frames",0)+frames
+        result[kind+"_seconds"]=result.get(kind+"_seconds",0)+seconds
+    return result
+
 class ExportError(RuntimeError):
     pass
 
@@ -571,6 +581,7 @@ def _run(
     progress_fraction: FractionFn | None = None,
 ) -> None:
     command = [command[0], "-progress", "pipe:1", "-nostats", *command[1:]]
+    started=time.monotonic()
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError as exc:
@@ -616,6 +627,7 @@ def _run(
         process.stdout.close()
     if process.stderr is not None:
         process.stderr.close()
+    elapsed=time.monotonic()-started
     stdout = "".join(stdout_lines)
     stderr = "".join(stderr_lines)
     logs.append("$ " + " ".join(command) + "\n" + stdout + stderr)
@@ -624,6 +636,10 @@ def _run(
     if process.returncode:
         detail = stderr.strip().splitlines()[-1] if stderr.strip() else "FFmpeg export failed."
         raise ExportError(detail)
+    encoder="nvenc" if "hevc_nvenc" in command else "cpu" if "libx265" in command else None
+    frames=[int(x) for x in re.findall(r"(?m)^frame=\s*(\d+)\s*$",stdout)]
+    if encoder and frames and max(frames)>0 and elapsed>0:
+        ENCODE_MEASUREMENTS.append((encoder,max(frames),elapsed))
 
 
 @lru_cache(maxsize=1)

@@ -95,6 +95,19 @@ class DispatchTests(unittest.TestCase):
         self.assertNotIn(self.client.origin,value)
         self.assertNotIn(self.jid,report(Store("other",self.store.root.parent.parent),24))
 
+    def test_report_actual_encoding_metrics_and_parallel_comparison(self):
+        from app.modules.studio.performance import record,report
+        now=__import__("time").time()
+        for limit in (1,2):
+            record(self.store,self.jid,{"attempt_id":str(limit)*32,"state":"completed","action":"export",
+                "timing":{"completed_at":now},"telemetry":{"peak_active_slots":limit,"gpu_model":"RTX Test","gpu_samples":2,
+                "gpu_vram_peak_mib":800,"gpu_utilization_mean_pct":50,"secret":"do not export"},
+                "result":{"performance":{"nvenc_frames":300,"nvenc_seconds":10}}},parallel_limit=limit)
+        result=report(self.store,24)
+        self.assertIn("nvenc average encoding FPS: 30.00",result)
+        self.assertIn("Parallel 2: 1 attempts, 30.00 weighted FPS",result)
+        self.assertNotIn("do not export",result)
+
     def test_gpu_upload_progress_tracks_acknowledged_bytes_across_restart(self):
         def put(a,n,offset,data):
             self.assertEqual(data,VIDEO[offset:offset+len(data)])
