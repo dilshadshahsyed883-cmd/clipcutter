@@ -37,6 +37,14 @@ class StudioLayoutTests(unittest.TestCase):
         for action in ("start","stop","pause","resume","retry"):
             self.assertIn('id="gpu-'+action+'" disabled',html)
 
+    def test_cached_gpu_status_does_not_flash_loading_or_rebuild_unchanged_rows(self):
+        js=(ROOT/"app/static/gpu.js").read_text()
+        self.assertIn('if(live){setDisabled("gpu-refresh",true);setText("gpu-status","Checking SaladCloud…");}',js)
+        self.assertIn('if(el.textContent!==value)el.textContent=value;',js)
+        self.assertIn('if(signature!==instanceSignature)',js)
+        self.assertIn('api(live?"/status":"/status/cached")',js)
+        self.assertNotIn('if(!$("gpu-instances").children.length)',js)
+
     def test_delete_without_browser_popup(self):
         js=(ROOT/"app/static/studio.js").read_text()
         self.assertNotIn("confirm(",js)
