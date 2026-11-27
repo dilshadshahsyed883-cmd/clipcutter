@@ -74,6 +74,7 @@ class Lifecycle:
             from .vps_export import local_row
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
             phases={x["job_id"]:x["phase"] for x in c.execute("SELECT job_id,phase FROM gpu_attempts")} if table else {}
+            intake_pending=any(x["state"] in ("awaiting_input","staging") for x in rows)
             rows=[x for x in rows if not local_row({**dict(x),"phase":phases.get(x["id"])})]
             states=[x["state"] for x in rows]
             eligible=0
@@ -84,7 +85,7 @@ class Lifecycle:
             # Unknown phases conservatively block mutation.
             table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
             unresolved=bool(table and c.execute("SELECT 1 FROM gpu_attempts WHERE phase NOT LIKE 'vps_%' AND phase NOT IN ('acknowledged','review_ready','new','cancelled_clean','failed_clean') LIMIT 1").fetchone())
-        return {"intake":any(s in ("awaiting_input","staging") for s in states),"eligible":eligible,
+        return {"intake":intake_pending,"eligible":eligible,
             "busy":unresolved or any(s in ("processing","delivering") for s in states),
             "empty":not eligible and all(s in ("completed","failed","cancelled","deleted","review","batch_expanded","ready") for s in states) and not unresolved}
     def _post(self,r,action,i=None):

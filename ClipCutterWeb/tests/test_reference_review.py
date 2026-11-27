@@ -97,6 +97,12 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(self.d.tick(self.jid),"acknowledged")
         self.assertEqual(self.worker.starts,1)
         self.assertEqual(self.store.get(self.jid)["state"],"completed")
+        from app.modules.studio.output_names import visible
+        from app.modules.studio.performance import report
+        self.assertEqual(visible(self.store,self.jid)["outputs"][0]["duration_ms"],2000)
+        result=report(self.store,24)
+        self.assertIn("vps_export | completed",result)
+        self.assertIn("VPS delivery and verification:",result)
 
     def test_range_and_changed_input_rejected(self):
         self.scan()

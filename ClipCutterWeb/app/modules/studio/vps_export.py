@@ -9,6 +9,7 @@ from .drive_delivery import deliver_one,DeliveryError
 from .output_names import allocate
 from .intake import RESERVE
 from .dispatch import DispatchError,sha_file,NAME,canonical
+from .performance import record
 
 def local_job(job):
     settings=job.get("settings",{})
@@ -105,6 +106,9 @@ def encode(source,settings,ranges,out,cancel,progress):
                       "media_type":"video/mp4","duration_ms":actual})
     return items
 
+def audit(d,jid,row,state,**timing):
+    record(d.store,jid,{"attempt_id":row["attempt_id"],"action":"vps_export","state":state,"timing":timing})
+
 def terminal(d,jid,row,state,message):
     with d.store.connect() as c:
         c.execute("BEGIN IMMEDIATE");d.store.row(c,jid)
@@ -112,6 +116,7 @@ def terminal(d,jid,row,state,message):
                   (state,message[:500],int(time.time()),jid,d.store.owner))
         c.execute("UPDATE gpu_attempts SET phase=? WHERE job_id=? AND attempt_id=?",("vps_"+state,jid,row["attempt_id"]))
         c.execute("DELETE FROM gpu_commands WHERE job_id=?",(jid,))
+    audit(d,jid,row,state,**{state+"_at":time.time()})
     return "vps_"+state
 
 def tick(d,jid,row,allow_start=True):
@@ -141,6 +146,7 @@ def tick(d,jid,row,allow_start=True):
                 if store.row(c,jid)["state"]!="ready":raise DispatchError("VPS admission state changed")
                 c.execute("UPDATE requests SET state='processing',progress=0,message='VPS encoding',updated_at=? WHERE id=? AND owner=?",(int(time.time()),jid,store.owner))
                 c.execute("UPDATE gpu_attempts SET phase='vps_processing' WHERE job_id=? AND attempt_id=?",(jid,row["attempt_id"]))
+        audit(d,jid,row,"running",running_at=time.time())
         try:
             root=store.root/"inputs"/jid
             for n,item in m["files"].items():
@@ -150,9 +156,11 @@ def tick(d,jid,row,allow_start=True):
             source=root/mapping["source.video"]
             ranges=settings["ranges"] if settings["mode"]=="manual" else json.loads((root/mapping["approved-review.json"]).read_text())["ranges"]
             safe_dir(out)
+            audit(d,jid,row,"running",input_verified_at=time.time(),processing_started_at=time.time())
             items=encode(source,settings,ranges,out,lambda:d.command(jid)=="cancel",
               lambda i,n:store.gpu_stage_progress(jid,"processing",100*i//n,"VPS encoding"))
             if d.command(jid)=="cancel":raise InterruptedError("Cancelled")
+            audit(d,jid,row,"running",processing_finished_at=time.time())
             tmp=work/"result.tmp"
             with tmp.open("xb") as f:f.write(canonical(items));f.flush();os.fsync(f.fileno())
             os.replace(tmp,receipt)
@@ -174,6 +182,7 @@ def tick(d,jid,row,allow_start=True):
                 c.execute("UPDATE gpu_attempts SET phase='vps_delivering' WHERE job_id=? AND attempt_id=?",(jid,row["attempt_id"]))
         phase="vps_delivering"
     if phase=="vps_delivering":
+        audit(d,jid,row,"running",delivery_started_at=time.time())
         items=json.loads(receipt.read_bytes())
         if not dest.exists():
             os.rename(out,dest)
@@ -192,6 +201,7 @@ def tick(d,jid,row,allow_start=True):
                 if not deliver_one(store,jid,folder,dest,items):return "vps_delivering"
             except DeliveryError as exc:raise DispatchError(str(exc)) from None
         if store.get(jid)["state"]!="completed":store.publish_verified_outputs(jid,items)
+        audit(d,jid,row,"completed",completed_at=time.time(),delivery_finished_at=time.time())
         d._phase(jid,"acknowledged")
         d.clear_command(jid,"cancel")
         return "acknowledged"

@@ -19,6 +19,7 @@ def init(s):
     with s.connect() as c:
         c.executescript("""CREATE TABLE IF NOT EXISTS identity_counters(identity_id TEXT PRIMARY KEY,next_number INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS output_names(job_id TEXT NOT NULL REFERENCES requests(id),original TEXT NOT NULL,display TEXT NOT NULL COLLATE NOCASE,deleted INTEGER NOT NULL DEFAULT 0,duration_ms INTEGER,PRIMARY KEY(job_id,original));
+        CREATE TABLE IF NOT EXISTS output_durations(job_id TEXT NOT NULL REFERENCES requests(id), original TEXT NOT NULL, duration_ms INTEGER NOT NULL, PRIMARY KEY(job_id,original));
         CREATE TABLE IF NOT EXISTS reserved_output_names(name TEXT PRIMARY KEY COLLATE NOCASE);""")
 
 def allocate(s,jid,items,stitched=False):
@@ -26,6 +27,10 @@ def allocate(s,jid,items,stitched=False):
     with s.connect() as c:
         c.execute("BEGIN IMMEDIATE")
         r=c.execute("SELECT * FROM request_identities WHERE job_id=?",(jid,)).fetchone()
+        for item in items:
+            duration=item.get("duration_ms")
+            if item["media_type"]=="video/mp4" and type(duration) is int and duration>0:
+                c.execute("INSERT OR IGNORE INTO output_durations VALUES(?,?,?)",(jid,item["name"],duration))
         if not r:return
         counter=c.execute("SELECT next_number FROM identity_counters WHERE identity_id=?",(r["identity_id"],)).fetchone()
         n=counter[0] if counter else 1
@@ -53,13 +58,14 @@ def visible(s,jid):
     with s.connect() as c:
         r=c.execute("SELECT label,identity_id FROM request_identities WHERE job_id=?",(jid,)).fetchone()
         aliases={x["original"]:dict(x) for x in c.execute("SELECT * FROM output_names WHERE job_id=?",(jid,))}
+        durations={x["original"]:x["duration_ms"] for x in c.execute("SELECT * FROM output_durations WHERE job_id=?",(jid,))}
         table=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_attempts'").fetchone()
         attempt=c.execute("SELECT phase FROM gpu_attempts WHERE job_id=?",(jid,)).fetchone() if table else None
     out=[]
     for item in outputs:
         a=aliases.get(item["name"],{})
         if a.get("deleted"):continue
-        out.append({**item,"id":item["name"],"name":a.get("display",item["name"]),"duration_ms":a.get("duration_ms")})
+        out.append({**item,"id":item["name"],"name":a.get("display",item["name"]),"duration_ms":durations.get(item["name"],a.get("duration_ms"))})
     return {"outputs":out,"identity":r["label"] if r else None,"identity_id":r["identity_id"] if r else None,"editable":bool(attempt and attempt["phase"]=="acknowledged")}
 
 def download(s,jid,name):
