@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 import httpx
 from .store import safe_dir
+from .performance import record
 from .intake import verify_format, RESERVE
 from .eligibility import blocker
 from .drive_delivery import DeliveryError, deliver_one, preflight
@@ -143,6 +144,7 @@ class Dispatcher:
         self._validate(ack,row,m)
         if ack.get("state")!=state or ack.get("purged") is not True:
             raise DispatchError("Terminal attempt cleanup unconfirmed")
+        record(self.store,jid,ack)
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             self.store.row(c,jid)
@@ -265,6 +267,7 @@ class Dispatcher:
                     remote=self.client.create(a,m)
             else:remote=self.client.status(a)
             self._validate(remote,row,m)
+            record(self.store,jid,remote,parallel_limit=render_limit)
             state=remote["state"];local=self.store.get(jid)["state"]
             if command=="cancel" and state in ("staging","queued","running"):
                 remote=self.client.cancel(a);self._validate(remote,row,m)
@@ -314,6 +317,7 @@ class Dispatcher:
                     remote=self.client.start(a)
                 self._validate(remote,row,m)
                 state=remote["state"]
+                record(self.store,jid,remote,parallel_limit=render_limit)
             if state in ("queued","running","cancelling"):
                 if local=="ready":self.store.transition(jid,"ready","processing","GPU accepted verified inputs",0)
                 self._phase(jid,"processing")
@@ -354,6 +358,8 @@ class Dispatcher:
             ack=self.client.purge(row["attempt_id"],digest)
             if not isinstance(ack,dict) or ack.get("attempt_id")!=row["attempt_id"] or ack.get("purged") is not True:
                 raise DispatchError("Scan acknowledgement unconfirmed")
+            self._validate(ack,row,m)
+            record(self.store,jid,ack)
             confirm_scan(self.store,jid,row["attempt_id"],digest)
             return "review_ready"
         if result.get("state")!="completed":raise DispatchError("Unexpected output state")
@@ -377,7 +383,11 @@ class Dispatcher:
             for x in expected:
                 p,_=self.store.output_path(jid,x["name"])
                 if sha_file(p)!=x["sha256"]:raise DispatchError("Published output changed")
-            self.client.purge(row["attempt_id"],digest);self._phase(jid,"acknowledged",digest);return "acknowledged"
+            ack=self.client.purge(row["attempt_id"],digest)
+            self._validate(ack,row,m)
+            if ack.get("purged") is not True:raise DispatchError("Output acknowledgement unconfirmed")
+            record(self.store,jid,ack)
+            self._phase(jid,"acknowledged",digest);return "acknowledged"
         if local!="delivering":raise DispatchError("Unexpected local delivery state")
         self._phase(jid,"delivering",digest)
         dest=safe_dir(safe_dir(self.store.root/"outputs")/jid)

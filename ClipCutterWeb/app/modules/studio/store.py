@@ -49,6 +49,9 @@ class Store:
             CREATE TABLE IF NOT EXISTS request_identities(job_id TEXT PRIMARY KEY REFERENCES requests(id),identity_id TEXT NOT NULL,label TEXT NOT NULL,slug TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS gpu_commands(job_id TEXT PRIMARY KEY REFERENCES requests(id), action TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS gpu_attempt_history(attempt_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, phase TEXT NOT NULL, recorded_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS gpu_performance(attempt_id TEXT PRIMARY KEY, job_id TEXT NOT NULL,
+                action TEXT NOT NULL, state TEXT NOT NULL, timing TEXT NOT NULL, observed_at INTEGER NOT NULL,
+                parallel_limit INTEGER);
             CREATE TABLE IF NOT EXISTS outputs(
                 job_id TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL,
                 sha256 TEXT NOT NULL, media_type TEXT NOT NULL,
