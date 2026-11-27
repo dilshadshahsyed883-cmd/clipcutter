@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/studio.css?v=20261127-review-preview-1">
+<link rel="stylesheet" href="/static/studio.css?v=20261127-dominant-analyzer-1">
 <div id="studio" data-kind="{{ page.key }}">
 <nav class="studio-subtabs" aria-label="{{ page.title }} sections">
 <button type="button" data-view="new" aria-pressed="true" aria-controls="studio-new">{{ 'New Request' if page.key == 'extractor' else 'New Analysis' }}</button>
@@ -55,8 +55,9 @@
 <div class="studio-grid">
 <label>Sample interval (ms) <input name="sample_interval_ms" type="number" min="250" max="10000" value="1000" required></label>
 <label>Similarity threshold <input name="similarity_threshold" type="number" min="0" max="1" step=".01" value=".50" required></label>
-<label class="studio-check"><input name="ignore_background_faces" type="checkbox" checked> Ignore background faces</label>
-<label class="studio-check"><input name="ignore_static_faces" type="checkbox" checked> Ignore static faces / logos</label>
+<label>Dominant face area ratio <input name="dominant_face_ratio" type="number" min="1.1" max="20" step=".1" value="2.5" required></label>
+<label class="studio-check"><input name="ignore_background_faces" type="checkbox"> Ignore background faces (optional)</label>
+<label class="studio-check"><input name="ignore_static_faces" type="checkbox"> Ignore static faces / logos (optional)</label>
 </div>
 <h3>Ignore regions (normalized 0–1, x / y / width / height)</h3><div id="region-list"></div><button type="button" id="add-region" class="studio-secondary">Add region</button></details>
 {% endif %}
@@ -97,4 +98,4 @@
 <h2>{{ "Verified outputs" if page.key == "extractor" else "Analysis results" }}</h2>{% if page.key == "extractor" %}<label>Identity filter <select id="output-identity-filter"><option value="">All identities</option></select></label>{% endif %}<label>Completed request <select id="result-request"><option value="">Select a request</option></select></label><div id="person-results"></div><p id="output-status" role="status">Select Outputs on a request to inspect its available files.</p>
 {% if page.key == "extractor" %}<div id="output-controls" class="studio-actions" hidden><label>Output view <select id="output-view"><option value="list">List</option><option value="grid">Thumbnail grid</option></select></label><button type="button" id="output-select-all" class="studio-secondary">Select All</button><button type="button" id="output-deselect-all" class="studio-secondary">Deselect All</button><button type="button" id="output-delete-selected" class="studio-danger">Delete Selected</button><span class="studio-note">Rename/delete here affects the local library only; delivered Drive files are unchanged.</span><button type="button" id="output-zip" class="studio-secondary">Download Selected ZIP</button></div>{% endif %}<div id="output-list"></div><video id="output-preview" controls preload="metadata" hidden></video>
 </section>
-</div><script defer src="/static/studio.js?v=20261127-vps-export-1"></script>
+</div><script defer src="/static/studio.js?v=20261127-dominant-analyzer-1"></script>
